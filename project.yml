@@ -28,9 +28,20 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.watermarkcamera.app
         INFOPLIST_FILE: CameraApp/Info.plist
-        GENERATE_INFOPLIST_FILE: false
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSCameraUsageDescription: "需要使用相机拍摄照片，用于生成带定位水印的照片"
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "需要获取您的精确位置，用于在照片水印中记录经纬度信息"
+        INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription: "需要获取您的精确位置，用于在照片水印中记录经纬度信息"
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "需要保存带水印的照片到您的相册"
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "需要访问相册以保存带水印的照片"
         DEVELOPMENT_TEAM: ""
     dependencies:
       - package: Alamofire
     info:
       path: CameraApp/Info.plist
+      properties:
+        NSCameraUsageDescription: "需要使用相机拍摄照片，用于生成带定位水印的照片"
+        NSLocationWhenInUseUsageDescription: "需要获取您的精确位置，用于在照片水印中记录经纬度信息"
+        NSLocationAlwaysAndWhenInUseUsageDescription: "需要获取您的精确位置，用于在照片水印中记录经纬度信息"
+        NSPhotoLibraryAddUsageDescription: "需要保存带水印的照片到您的相册"
+        NSPhotoLibraryUsageDescription: "需要访问相册以保存带水印的照片"
