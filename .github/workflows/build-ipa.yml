@@ -32,7 +32,6 @@ jobs:
             -scheme CameraApp \
             -sdk iphoneos \
             -configuration Release \
-            -arch arm64 \
             -derivedDataPath build/DerivedData \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
