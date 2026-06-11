@@ -19,8 +19,11 @@ struct CameraPreviewView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
-        view.previewLayer.session = session
-        view.previewLayer.videoGravity = .resizeAspectFill
+        // 延迟设置session，确保view已完全初始化
+        DispatchQueue.main.async {
+            view.previewLayer.session = session
+            view.previewLayer.videoGravity = .resizeAspectFill
+        }
         view.backgroundColor = .black
         return view
     }
@@ -43,7 +46,9 @@ class PreviewView: UIView {
 
     /// 便捷访问PreviewLayer
     var previewLayer: AVCaptureVideoPreviewLayer {
-        // swiftlint:disable:next force_cast
-        layer as! AVCaptureVideoPreviewLayer
+        guard let layer = layer as? AVCaptureVideoPreviewLayer else {
+            fatalError("Layer is not AVCaptureVideoPreviewLayer")
+        }
+        return layer
     }
 }

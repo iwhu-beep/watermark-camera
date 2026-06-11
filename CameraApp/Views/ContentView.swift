@@ -91,7 +91,7 @@ struct ContentView: View {
             }
             Button("稍后", role: .cancel) {}
         } message: {
-            Text(LocationManager.shared.permissionAlertInfo.message)
+            Text("请在系统设置中开启精确定位权限")
         }
     }
 
