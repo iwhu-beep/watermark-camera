@@ -165,23 +165,40 @@ struct ContentView: View {
 
     private func capturePhoto() {
         guard !isCapturing else { return }
+        
+        // 检查相机是否已就绪
+        guard cameraController.isReady else {
+            print("[ContentView] 相机未就绪，无法拍照")
+            return
+        }
+        
         isCapturing = true
 
         // 先请求单次定位，拿到结果后再拍照
         LocationManager.shared.requestLocation { [self] result in
+            print("[ContentView] 定位完成: \(result)")
             // 定位完成后触发拍照
             cameraController.capturePhoto()
         }
     }
 
     /// 拍照完成回调（已在主线程）
-    private func handleCapturedPhoto(_ image: UIImage) {
+    private func handleCapturedPhoto(_ image: UIImage?) {
+        defer { isCapturing = false }
+        
+        guard let image = image else {
+            print("[ContentView] 拍照失败，图像为nil")
+            return
+        }
+        
         // 1. 读取定位结果，生成坐标文本
         let coordinateText: String
         if case .success = LocationManager.shared.lastResult {
             coordinateText = LocationManager.shared.formatCoordinate(format: settings.coordinateFormat)
+            print("[ContentView] 坐标: \(coordinateText)")
         } else if case .failure(let error) = LocationManager.shared.lastResult {
             coordinateText = "经度：--- 纬度：---"
+            print("[ContentView] 定位失败: \(error)")
             // 无权限或精度降级时弹窗引导用户去设置
             switch error {
             case .permissionDenied, .accuracyReduced:
@@ -191,6 +208,7 @@ struct ContentView: View {
             }
         } else {
             coordinateText = "经度：--- 纬度：---"
+            print("[ContentView] 无定位结果")
         }
 
         // 2. 绘制水印
@@ -209,9 +227,6 @@ struct ContentView: View {
             && !settings.aliyunRefreshToken.isEmpty {
             uploadToCloud(watermarkedImage)
         }
-
-        // 5. 恢复拍照状态
-        isCapturing = false
     }
 
     // MARK: - 保存相册

@@ -24,12 +24,18 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
     ) {
         if let error = error {
             print("[CameraController] 拍照错误: \(error.localizedDescription)")
+            DispatchQueue.main.async { [weak self] in
+                self?.onComplete?(nil)
+            }
             return
         }
 
         guard let data = photo.fileDataRepresentation(),
               let image = UIImage(data: data) else {
             print("[CameraController] 无法从拍照数据生成UIImage")
+            DispatchQueue.main.async { [weak self] in
+                self?.onComplete?(nil)
+            }
             return
         }
 
@@ -51,7 +57,10 @@ class CameraController: ObservableObject {
     let session = AVCaptureSession()
 
     /// 拍照完成回调
-    var onPhotoCaptured: ((UIImage) -> Void)?
+    var onPhotoCaptured: ((UIImage?) -> Void)?
+    
+    /// 相机是否已就绪
+    @Published var isReady: Bool = false
 
     // MARK: 私有属性
 
@@ -71,41 +80,46 @@ class CameraController: ObservableObject {
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
             
-            do {
-                self.session.beginConfiguration()
-                self.session.sessionPreset = .photo
+            print("[CameraController] 开始配置相机...")
+            
+            self.session.beginConfiguration()
+            self.session.sessionPreset = .photo
 
-                // 1. 添加视频输入（后置广角摄像头）
-                guard let device = AVCaptureDevice.default(
-                    .builtInWideAngleCamera,
-                    for: .video,
-                    position: .back
-                ) else {
-                    print("[CameraController] 无法获取后置摄像头设备")
-                    self.session.commitConfiguration()
-                    return
-                }
-
-                guard let input = try? AVCaptureDeviceInput(device: device) else {
-                    print("[CameraController] 无法创建摄像头输入")
-                    self.session.commitConfiguration()
-                    return
-                }
-
-                if self.session.canAddInput(input) {
-                    self.session.addInput(input)
-                }
-
-                // 2. 添加照片输出
-                if self.session.canAddOutput(self.photoOutput) {
-                    self.session.addOutput(self.photoOutput)
-                }
-
+            // 1. 添加视频输入（后置广角摄像头）
+            guard let device = AVCaptureDevice.default(
+                .builtInWideAngleCamera,
+                for: .video,
+                position: .back
+            ) else {
+                print("[CameraController] 无法获取后置摄像头设备")
                 self.session.commitConfiguration()
-                self.session.startRunning()
-            } catch {
-                print("[CameraController] 相机初始化失败: \(error)")
+                return
+            }
+
+            guard let input = try? AVCaptureDeviceInput(device: device) else {
+                print("[CameraController] 无法创建摄像头输入")
                 self.session.commitConfiguration()
+                return
+            }
+
+            if self.session.canAddInput(input) {
+                self.session.addInput(input)
+            }
+
+            // 2. 添加照片输出
+            if self.session.canAddOutput(self.photoOutput) {
+                self.session.addOutput(self.photoOutput)
+            }
+
+            self.session.commitConfiguration()
+            
+            print("[CameraController] 启动相机...")
+            self.session.startRunning()
+            
+            // 标记相机已就绪
+            DispatchQueue.main.async {
+                self.isReady = true
+                print("[CameraController] 相机已就绪")
             }
         }
     }
@@ -116,6 +130,9 @@ class CameraController: ObservableObject {
     func stopCamera() {
         sessionQueue.async { [weak self] in
             self?.session.stopRunning()
+            DispatchQueue.main.async {
+                self?.isReady = false
+            }
         }
     }
 
@@ -123,10 +140,21 @@ class CameraController: ObservableObject {
 
     /// 触发拍照，结果通过 onPhotoCaptured 回调返回
     func capturePhoto() {
+        guard session.isRunning else {
+            print("[CameraController] 相机未运行，无法拍照")
+            onPhotoCaptured?(nil)
+            return
+        }
+        
+        print("[CameraController] 开始拍照...")
+        
         let settings = AVCapturePhotoSettings()
+        // 禁用闪光灯以获得更自然的照片
+        settings.flashMode = .off
 
         let delegate = PhotoCaptureDelegate()
         delegate.onComplete = { [weak self] image in
+            print("[CameraController] 拍照完成，图像: \(image != nil ? "成功" : "失败")")
             self?.onPhotoCaptured?(image)
         }
 
