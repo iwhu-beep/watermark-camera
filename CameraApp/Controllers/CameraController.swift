@@ -15,7 +15,7 @@ import UIKit
 private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
 
     /// 拍照完成回调
-    var onComplete: ((UIImage) -> Void)?
+    var onComplete: ((UIImage?) -> Void)?
 
     func photoOutput(
         _ output: AVCapturePhotoOutput,
