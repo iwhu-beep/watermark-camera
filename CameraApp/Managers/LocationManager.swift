@@ -191,7 +191,7 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
         if status == .denied || status == .restricted {
             message = "应用需要定位权限以记录拍摄位置，请在系统设置中开启定位权限。"
         } else if #available(iOS 14, *), manager.accuracyAuthorization == .reducedAccuracy {
-            message = "应用需要精确定位以记录准确坐标，请在系统设置中将定位精度改为"精确位置"。"
+            message = "应用需要精确定位以记录准确坐标，请在系统设置中将定位精度改为'精确位置'。"
         } else {
             return // 权限正常，无需引导
         }
@@ -221,7 +221,7 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
             return (true, "应用需要定位权限以记录拍摄位置，请在系统设置中开启定位权限。")
         }
         if #available(iOS 14, *), manager.accuracyAuthorization == .reducedAccuracy {
-            return (true, "应用需要精确定位以记录准确坐标，请在系统设置中将定位精度改为"精确位置"。")
+            return (true, "应用需要精确定位以记录准确坐标，请在系统设置中将定位精度改为'精确位置'。")
         }
         return (false, "")
     }
