@@ -16,6 +16,11 @@ jobs:
       - name: Select Xcode Version
         run: sudo xcode-select -s /Applications/Xcode_16.1.app
 
+      - name: Install iOS Platform
+        run: |
+          xcodebuild -downloadPlatform iOS || true
+          echo "iOS platform installation completed"
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
