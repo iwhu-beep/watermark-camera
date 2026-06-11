@@ -25,31 +25,36 @@ jobs:
       - name: Resolve Swift Packages
         run: xcodebuild -resolvePackageDependencies -project CameraApp.xcodeproj -scheme CameraApp -sdk iphoneos
 
-      - name: Build App (No Signing)
+      - name: Build App
         run: |
           xcodebuild \
             -project CameraApp.xcodeproj \
             -scheme CameraApp \
             -sdk iphoneos \
             -configuration Release \
+            -arch arm64 \
             -derivedDataPath build/DerivedData \
-            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             PRODUCT_BUNDLE_IDENTIFIER=com.watermarkcamera.app \
             COMPILER_INDEX_STORE_ENABLE=NO
 
-      - name: Package IPA
+      - name: Sign and Package IPA
         run: |
           # Find the .app file
-          APP_PATH=$(find build/DerivedData -name "*.app" -path "*/Release-iphoneos/*" | head -1)
+          APP_PATH=$(find build/DerivedData -name "CameraApp.app" -path "*/Release-iphoneos/*" | head -1)
           
           if [ -z "$APP_PATH" ]; then
             echo "Error: .app file not found"
+            find build/DerivedData -name "*.app" || true
             exit 1
           fi
           
           echo "Found app: $APP_PATH"
+          
+          # Ad-hoc sign the app (required for TrollStore)
+          codesign --force --sign - "$APP_PATH"
           
           # Create Payload directory
           mkdir -p build/ipa/Payload
@@ -63,6 +68,7 @@ jobs:
           cd ../..
           
           echo "IPA created at build/ipa/CameraApp.ipa"
+          ls -la build/ipa/
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
