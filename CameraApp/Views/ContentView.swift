@@ -2,7 +2,7 @@
 //  ContentView.swift
 //  CameraApp
 //
-//  主界面：相机取景 + 备注输入 + 快门按钮 + 保存/上传流程
+//  主界面：全屏取景 + 实时信息叠加 + 底部控制栏
 //  路径: CameraApp/Views/ContentView.swift
 //
 
@@ -34,33 +34,45 @@ struct ContentView: View {
     @State private var showSettings: Bool = false
     /// 是否显示定位权限引导弹窗
     @State private var showLocationPermissionAlert: Bool = false
+    /// 当前时间（每秒更新）
+    @State private var currentTime: String = ""
+    /// 当前经度
+    @State private var currentLongitude: String = "---"
+    /// 当前纬度
+    @State private var currentLatitude: String = "---"
+    /// 坐标系
+    @State private var coordinateSystem: String = "WGS84 坐标系"
+    /// 地址
+    @State private var currentAddress: String = "定位中..."
+    /// 是否正在显示备注输入
+    @State private var showNoteInput: Bool = false
+    /// 定时器
+    @State private var timer: Timer? = nil
 
     // MARK: - 视图主体
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                // 全屏黑色背景
-                Color.black.ignoresSafeArea()
+        ZStack {
+            // ========== 全屏相机预览 ==========
+            CameraPreviewView(session: cameraController.session)
+                .ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    // ========== 相机取景器 ==========
-                    CameraPreviewView(session: cameraController.session)
-                        .frame(
-                            width: geometry.size.width,
-                            height: geometry.size.width * 4.0 / 3.0
-                        )
-                        .clipped()
+            // ========== 信息叠加层 ==========
+            VStack {
+                // 顶部工具栏
+                topToolBar
 
-                    Spacer()
+                Spacer()
 
-                    // ========== 底部控制区 ==========
-                    controlBar
-                }
+                // 信息叠加区（底部偏上）
+                infoOverlay
+
+                // 底部控制栏
+                bottomControlBar
             }
-            .navigationBarHidden(true)
         }
-        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .navigationBarHidden(true)
+        .statusBar(hidden: true)
         .onAppear {
             // 延迟启动，确保 UI 完全加载
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -70,9 +82,20 @@ struct ContentView: View {
                 cameraController.setupCamera()
                 cameraController.onPhotoCaptured = handleCapturedPhoto
             }
+            // 启动定位
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                startLocationUpdates()
+            }
+            // 启动时钟
+            updateTime()
+            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+                updateTime()
+            }
         }
         .onDisappear {
             cameraController.stopCamera()
+            timer?.invalidate()
+            timer = nil
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -95,120 +118,270 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - 顶部工具栏
+
+    private var topToolBar: some View {
+        HStack(spacing: 0) {
+            // 设置/菜单
+            Button(action: { showSettings = true }) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+            }
+
+            Spacer()
+
+            // 闪光灯
+            Button(action: {}) {
+                Image(systemName: "bolt.slash.fill")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+            }
+
+            // 切换摄像头
+            Button(action: {}) {
+                Image(systemName: "camera.rotate.fill")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+            }
+
+            // 更多
+            Button(action: {}) {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 8)
+        .background(
+            LinearGradient(
+                colors: [Color.black.opacity(0.5), Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .top)
+        )
+    }
+
+    // MARK: - 信息叠加层
+
+    private var infoOverlay: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // 经度
+            HStack(spacing: 4) {
+                Text("经度：")
+                    .foregroundColor(.white.opacity(0.8))
+                Text(currentLongitude)
+                    .foregroundColor(.white)
+            }
+            .font(.system(size: 14, weight: .medium))
+
+            // 纬度
+            HStack(spacing: 4) {
+                Text("纬度：")
+                    .foregroundColor(.white.opacity(0.8))
+                Text(currentLatitude)
+                    .foregroundColor(.white)
+            }
+            .font(.system(size: 14, weight: .medium))
+
+            // 坐标系
+            HStack(spacing: 4) {
+                Text("坐标：")
+                    .foregroundColor(.white.opacity(0.8))
+                Text(coordinateSystem)
+                    .foregroundColor(.white)
+            }
+            .font(.system(size: 14, weight: .medium))
+
+            // 地址
+            HStack(spacing: 4) {
+                Text("地址：")
+                    .foregroundColor(.white.opacity(0.8))
+                Text(currentAddress)
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+            }
+            .font(.system(size: 14, weight: .medium))
+
+            // 时间
+            HStack(spacing: 4) {
+                Text("时间：")
+                    .foregroundColor(.white.opacity(0.8))
+                Text(currentTime)
+                    .foregroundColor(.white)
+            }
+            .font(.system(size: 14, weight: .medium))
+
+            // 备注
+            HStack(spacing: 4) {
+                Text("备注：")
+                    .foregroundColor(.white.opacity(0.8))
+                if showNoteInput {
+                    TextField("输入备注...", text: $noteText)
+                        .foregroundColor(.white)
+                        .tint(.white)
+                        .font(.system(size: 14, weight: .medium))
+                } else {
+                    Text(noteText.isEmpty ? "点击添加" : noteText)
+                        .foregroundColor(noteText.isEmpty ? .white.opacity(0.5) : .white)
+                        .lineLimit(1)
+                        .onTapGesture {
+                            showNoteInput = true
+                        }
+                }
+            }
+            .font(.system(size: 14, weight: .medium))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.black.opacity(0.55))
+        .cornerRadius(8)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
+    }
+
     // MARK: - 底部控制栏
 
-    private var controlBar: some View {
-        VStack(spacing: 16) {
-
-            // ========== 备注输入框 ==========
-            HStack(spacing: 8) {
-                TextField("输入备注内容...", text: $noteText)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.15))
-                    .cornerRadius(8)
-                    .foregroundColor(.white)
-                    .tint(.white)
-                    .font(.system(size: 15))
-
-                // 清除按钮
-                if !noteText.isEmpty {
-                    Button(action: { noteText = "" }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.white.opacity(0.6))
-                            .font(.system(size: 18))
-                    }
-                    .padding(.trailing, 4)
-                }
-            }
-            .padding(.horizontal, 16)
-
-            // ========== 快门 + 设置 ==========
-            HStack {
-                // 左：设置按钮
-                Button(action: { showSettings = true }) {
-                    Image(systemName: "gearshape.fill")
+    private var bottomControlBar: some View {
+        HStack {
+            // 左：相册
+            Button(action: {}) {
+                VStack(spacing: 4) {
+                    Image(systemName: "photo.on.rectangle")
                         .font(.system(size: 22))
                         .foregroundColor(.white)
-                        .frame(width: 50, height: 50)
+                    Text("图册")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.8))
                 }
+                .frame(width: 60, height: 60)
+            }
 
-                Spacer()
+            Spacer()
 
-                // 中：快门按钮
-                Button(action: capturePhoto) {
-                    ZStack {
-                        Circle()
-                            .strokeBorder(Color.white, lineWidth: 3)
-                            .frame(width: 72, height: 72)
-                        Circle()
-                            .fill(isCapturing ? Color.gray : Color.white)
-                            .frame(width: 60, height: 60)
+            // 中：快门按钮
+            Button(action: capturePhoto) {
+                ZStack {
+                    Circle()
+                        .strokeBorder(Color.white, lineWidth: 3)
+                        .frame(width: 72, height: 72)
+                    Circle()
+                        .fill(isCapturing ? Color.gray : Color.white)
+                        .frame(width: 60, height: 60)
+                }
+            }
+            .disabled(isCapturing)
+
+            Spacer()
+
+            // 右：水印
+            Button(action: {}) {
+                VStack(spacing: 4) {
+                    Image(systemName: "text.bubble.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(.orange)
+                    Text("水印")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.8))
+                }
+                .frame(width: 60, height: 60)
+            }
+        }
+        .padding(.horizontal, 40)
+        .padding(.vertical, 20)
+        .background(
+            LinearGradient(
+                colors: [Color.clear, Color.black.opacity(0.6)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+    }
+
+    // MARK: - 时间更新
+
+    private func updateTime() {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        currentTime = formatter.string(from: Date())
+    }
+
+    // MARK: - 定位更新
+
+    private func startLocationUpdates() {
+        // 请求首次定位
+        LocationManager.shared.requestLocation { [self] result in
+            handleLocationResult(result)
+        }
+    }
+
+    private func handleLocationResult(_ result: LocationResult) {
+        switch result {
+        case .success(let lon, let lat):
+            currentLongitude = String(format: "%.6f", lon)
+            currentLatitude = String(format: "%.6f", lat)
+            currentAddress = "GPS定位"
+        case .failure(let error):
+            currentLongitude = "---"
+            currentLatitude = "---"
+            switch error {
+            case .permissionDenied, .accuracyReduced:
+                currentAddress = "定位权限未开启"
+                showLocationPermissionAlert = true
+            case .serviceDisabled:
+                currentAddress = "定位服务已关闭"
+            case .timeout:
+                currentAddress = "定位超时，重试中..."
+                // 超时后重试
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    LocationManager.shared.requestLocation { result in
+                        handleLocationResult(result)
                     }
                 }
-                .disabled(isCapturing)
-
-                Spacer()
-
-                // 右：定位状态指示
-                LocationStatusBadge()
-                    .frame(width: 50, height: 50)
+            case .clError:
+                currentAddress = "定位错误"
             }
-            .padding(.horizontal, 32)
         }
-        .padding(.vertical, 20)
-        .background(Color.black.opacity(0.75))
     }
 
     // MARK: - 拍照流程
 
     private func capturePhoto() {
         guard !isCapturing else { return }
-        
+
         // 检查相机是否已就绪
         guard cameraController.isReady else {
             print("[ContentView] 相机未就绪，无法拍照")
             return
         }
-        
+
         isCapturing = true
 
-        // 先请求单次定位，拿到结果后再拍照
-        LocationManager.shared.requestLocation { [self] result in
-            print("[ContentView] 定位完成: \(result)")
-            // 定位完成后触发拍照
-            cameraController.capturePhoto()
-        }
+        // 直接拍照（定位已在后台持续更新）
+        cameraController.capturePhoto()
     }
 
     /// 拍照完成回调（已在主线程）
     private func handleCapturedPhoto(_ image: UIImage?) {
         defer { isCapturing = false }
-        
+
         guard let image = image else {
             print("[ContentView] 拍照失败，图像为nil")
             return
         }
-        
-        // 1. 读取定位结果，生成坐标文本
+
+        // 1. 生成坐标文本
         let coordinateText: String
         if case .success = LocationManager.shared.lastResult {
             coordinateText = LocationManager.shared.formatCoordinate(format: settings.coordinateFormat)
-            print("[ContentView] 坐标: \(coordinateText)")
-        } else if case .failure(let error) = LocationManager.shared.lastResult {
-            coordinateText = "经度：--- 纬度：---"
-            print("[ContentView] 定位失败: \(error)")
-            // 无权限或精度降级时弹窗引导用户去设置
-            switch error {
-            case .permissionDenied, .accuracyReduced:
-                showLocationPermissionAlert = true
-            default:
-                break
-            }
         } else {
-            coordinateText = "经度：--- 纬度：---"
-            print("[ContentView] 无定位结果")
+            coordinateText = "经度：\(currentLongitude) 纬度：\(currentLatitude)"
         }
 
         // 2. 绘制水印
@@ -258,7 +431,6 @@ struct ContentView: View {
     // MARK: - 云盘上传
 
     private func uploadToCloud(_ image: UIImage) {
-        // 同步配置到 AliyunDriveConfig
         AliyunDriveConfig.clientId = settings.aliyunClientId
         AliyunDriveConfig.refreshToken = settings.aliyunRefreshToken
         AliyunDriveConfig.uploadFolderId = settings.uploadFolderId
@@ -278,24 +450,5 @@ struct ContentView: View {
                 showUploadResult = true
             }
         )
-    }
-}
-
-// MARK: - 定位状态指示器
-
-/// 显示当前定位状态的小图标（从单例读取）
-struct LocationStatusBadge: View {
-    @ObservedObject private var locationManager = LocationManager.shared
-
-    var body: some View {
-        VStack(spacing: 2) {
-            let isLocated: Bool = {
-                if case .success = locationManager.lastResult { return true }
-                return false
-            }()
-            Image(systemName: isLocated ? "location.fill" : "location.slash")
-                .font(.system(size: 18))
-                .foregroundColor(isLocated ? .green : .red.opacity(0.7))
-        }
     }
 }
