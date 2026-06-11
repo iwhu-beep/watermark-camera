@@ -70,38 +70,43 @@ class CameraController: ObservableObject {
     func setupCamera() {
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
+            
+            do {
+                self.session.beginConfiguration()
+                self.session.sessionPreset = .photo
 
-            self.session.beginConfiguration()
-            self.session.sessionPreset = .photo
+                // 1. 添加视频输入（后置广角摄像头）
+                guard let device = AVCaptureDevice.default(
+                    .builtInWideAngleCamera,
+                    for: .video,
+                    position: .back
+                ) else {
+                    print("[CameraController] 无法获取后置摄像头设备")
+                    self.session.commitConfiguration()
+                    return
+                }
 
-            // 1. 添加视频输入（后置广角摄像头）
-            guard let device = AVCaptureDevice.default(
-                .builtInWideAngleCamera,
-                for: .video,
-                position: .back
-            ) else {
-                print("[CameraController] 无法获取后置摄像头设备")
+                guard let input = try? AVCaptureDeviceInput(device: device) else {
+                    print("[CameraController] 无法创建摄像头输入")
+                    self.session.commitConfiguration()
+                    return
+                }
+
+                if self.session.canAddInput(input) {
+                    self.session.addInput(input)
+                }
+
+                // 2. 添加照片输出
+                if self.session.canAddOutput(self.photoOutput) {
+                    self.session.addOutput(self.photoOutput)
+                }
+
                 self.session.commitConfiguration()
-                return
-            }
-
-            guard let input = try? AVCaptureDeviceInput(device: device) else {
-                print("[CameraController] 无法创建摄像头输入")
+                self.session.startRunning()
+            } catch {
+                print("[CameraController] 相机初始化失败: \(error)")
                 self.session.commitConfiguration()
-                return
             }
-
-            if self.session.canAddInput(input) {
-                self.session.addInput(input)
-            }
-
-            // 2. 添加照片输出
-            if self.session.canAddOutput(self.photoOutput) {
-                self.session.addOutput(self.photoOutput)
-            }
-
-            self.session.commitConfiguration()
-            self.session.startRunning()
         }
     }
 

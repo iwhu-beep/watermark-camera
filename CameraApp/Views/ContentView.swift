@@ -62,9 +62,14 @@ struct ContentView: View {
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .onAppear {
-            permissionManager.requestPermissions()
-            cameraController.setupCamera()
-            cameraController.onPhotoCaptured = handleCapturedPhoto
+            // 延迟启动，确保 UI 完全加载
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                permissionManager.requestPermissions()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                cameraController.setupCamera()
+                cameraController.onPhotoCaptured = handleCapturedPhoto
+            }
         }
         .onDisappear {
             cameraController.stopCamera()
