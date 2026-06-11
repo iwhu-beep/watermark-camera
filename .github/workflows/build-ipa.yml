@@ -28,7 +28,7 @@ jobs:
         run: xcodegen generate
 
       - name: Resolve Swift Packages
-        run: xcodebuild -resolvePackageDependencies -project CameraApp.xcodeproj -scheme CameraApp -destination 'generic/platform=iOS'
+        run: xcodebuild -resolvePackageDependencies -project CameraApp.xcodeproj -scheme CameraApp -sdk iphoneos
 
       - name: Build & Archive
         run: |
@@ -36,7 +36,7 @@ jobs:
             -project CameraApp.xcodeproj \
             -scheme CameraApp \
             -archivePath build/CameraApp.xcarchive \
-            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
             -configuration Release \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Development" \
