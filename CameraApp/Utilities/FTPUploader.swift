@@ -2,7 +2,7 @@
 //  FTPUploader.swift
 //  CameraApp
 //
-//  FTP 文件上传工具类，使用 CFWriteStream
+//  FTP 文件上传工具类，使用 CFWriteStream (Core Foundation FTP API)
 //  路径: CameraApp/Utilities/FTPUploader.swift
 //
 
@@ -81,91 +81,103 @@ final class FTPUploader {
 
         print("[FTPUploader] 上传到: \(remotePath)")
 
-        // 使用 InputStream 读取文件
-        let inputStream = InputStream(data: fileData)
-        inputStream.open()
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            // 使用 InputStream 读取文件数据
+            guard let inputStream = InputStream(url: localURL) else {
+                self.deliverFailure(onFailure, error: .fileReadFailed)
+                return
+            }
+            inputStream.open()
 
-        // 创建 CFWriteStream（返回 Unmanaged，需要 takeRetainedValue）
-        let unmanaged = CFWriteStreamCreateWithFTPURL(
-            kCFAllocatorDefault,
-            ftpURL as CFURL
-        )
-        let writeStream = unmanaged.takeRetainedValue()
+            // 创建 CFWriteStream
+            let writeStreamUnmanaged = CFWriteStreamCreateWithFTPURL(
+                kCFAllocatorDefault,
+                ftpURL as CFURL
+            )
+            let writeStream: CFWriteStream = writeStreamUnmanaged.takeRetainedValue()
 
-        // 设置用户名和密码
-        CFWriteStreamSetProperty(
-            writeStream,
-            kCFStreamPropertyFTPUserName,
-            FTPConfig.username as CFString
-        )
-        CFWriteStreamSetProperty(
-            writeStream,
-            kCFStreamPropertyFTPPassword,
-            FTPConfig.password as CFString
-        )
-        // 被动模式
-        CFWriteStreamSetProperty(
-            writeStream,
-            kCFStreamPropertyFTPUsePassiveMode,
-            kCFBooleanTrue
-        )
+            // 设置 FTP 属性（使用 Unmanaged bridging）
+            let username = FTPConfig.username as CFString
+            let password = FTPConfig.password as CFString
+            let passiveMode = kCFBooleanTrue
 
-        let totalBytes = fileData.count
-        var uploadedBytes = 0
-        let bufferSize = 4096
-        var buffer = [UInt8](repeating: 0, count: bufferSize)
+            CFWriteStreamSetProperty(
+                writeStream,
+                kCFStreamPropertyFTPUserName.takeUnretainedValue(),
+                username
+            )
+            CFWriteStreamSetProperty(
+                writeStream,
+                kCFStreamPropertyFTPPassword.takeUnretainedValue(),
+                password
+            )
+            CFWriteStreamSetProperty(
+                writeStream,
+                kCFStreamPropertyFTPUsePassiveMode.takeUnretainedValue(),
+                passiveMode
+            )
 
-        writeStream.open()
+            let totalBytes = fileData.count
+            var uploadedBytes = 0
+            let bufferSize = 65536
+            var buffer = [UInt8](repeating: 0, count: bufferSize)
 
-        DispatchQueue.global(qos: .userInitiated).async {
+            // 打开写入流
+            let openResult = CFWriteStreamOpen(writeStream)
+            guard openResult else {
+                inputStream.close()
+                self.deliverFailure(onFailure, error: .connectionFailed("无法打开 FTP 连接"))
+                return
+            }
+
             defer {
-                writeStream.close()
+                CFWriteStreamClose(writeStream)
                 inputStream.close()
             }
 
+            // 逐块上传
             while inputStream.hasBytesAvailable {
                 let bytesRead = inputStream.read(&buffer, maxLength: bufferSize)
                 if bytesRead < 0 {
                     let error = inputStream.streamError
-                    self.deliverFailure(onFailure, error: .networkError(error ?? NSError(domain: "FTP", code: -1)))
+                    self.deliverFailure(
+                        onFailure,
+                        error: .networkError(error ?? NSError(domain: "FTP", code: -1))
+                    )
                     return
                 }
                 if bytesRead == 0 { break }
 
+                var remaining = bytesRead
                 var offset = 0
-                while offset < bytesRead {
-                    let bytesWritten = writeStream.write(
-                        buffer.advanced(by: offset),
-                        maxLength: bytesRead - offset
+                while remaining > 0 {
+                    let written = CFWriteStreamWrite(
+                        writeStream,
+                        buffer.withUnsafeBufferPointer({ $0.baseAddress! + offset }),
+                        maxLength: remaining
                     )
-                    if bytesWritten < 0 {
-                        let error = writeStream.streamError
-                        self.deliverFailure(
-                            onFailure,
-                            error: .uploadFailed(error?.localizedDescription ?? "写入流错误")
-                        )
+                    if written < 0 {
+                        let error = CFWriteStreamCopyError(writeStream)
+                        let desc = error?.localizedDescription ?? "写入失败"
+                        self.deliverFailure(onFailure, error: .uploadFailed(desc))
                         return
                     }
-                    if bytesWritten == 0 { break }
-                    offset += bytesWritten
-                    uploadedBytes += bytesWritten
+                    if written == 0 {
+                        // 流满，等待
+                        Thread.sleep(forTimeInterval: 0.01)
+                        continue
+                    }
+                    offset += written
+                    remaining -= written
+                    uploadedBytes += written
                 }
 
                 let progress = Double(uploadedBytes) / Double(max(totalBytes, 1))
                 DispatchQueue.main.async { onProgress?(progress) }
             }
 
-            let status = writeStream.streamStatus
-            if status == .atEnd || status == .closed || status == .notOpen {
-                if let error = writeStream.streamError {
-                    self.deliverFailure(onFailure, error: .uploadFailed(error.localizedDescription))
-                } else {
-                    print("[FTPUploader] 上传完成")
-                    self.deliverSuccess(onSuccess)
-                }
-            } else {
-                self.deliverSuccess(onSuccess)
-            }
+            print("[FTPUploader] 上传完成 (\(uploadedBytes) bytes)")
+            self.deliverSuccess(onSuccess)
         }
     }
 
