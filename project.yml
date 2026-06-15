@@ -19,8 +19,6 @@ targets:
     platform: iOS
     sources:
       - path: CameraApp
-      - path: CameraApp/Assets.xcassets
-        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.watermarkcamera.app
