@@ -212,23 +212,22 @@ final class FTPUploader: NSObject {
         self.bytesWritten = 0
 
         // 创建 CFWriteStream
-        guard let stream = CFWriteStreamCreateWithFTPURL(
+        let ftpURL = URL(string: "ftp://\(host):\(port)\(remotePath)")!
+        let cfStream = CFWriteStreamCreateWithFTPURL(
             kCFAllocatorDefault,
-            URL(string: "ftp://\(host):\(port)\(remotePath)")! as CFURL
-        )?.takeRetainedValue() as OutputStream? else {
-            DispatchQueue.main.async {
-                self.failureHandler?(.streamError("创建 FTP 流失败"))
-            }
-            return
-        }
+            ftpURL as CFURL
+        ).takeRetainedValue()
+
+        // 转换为 OutputStream
+        let stream = cfStream as OutputStream
 
         // 设置 FTP 凭据
-        stream.setProperty(username as NSString, forKey: .init(kCFStreamPropertyFTPUserName))
-        stream.setProperty(password as NSString, forKey: .init(kCFStreamPropertyFTPPassword))
+        stream.setProperty(username as NSString, forKey: Stream.PropertyKey(kCFStreamPropertyFTPUserName))
+        stream.setProperty(password as NSString, forKey: Stream.PropertyKey(kCFStreamPropertyFTPPassword))
 
         // 设置代理
         stream.delegate = self
-        stream.schedule(in: .current, forMode: .common)
+        stream.schedule(in: RunLoop.current, forMode: RunLoop.Mode.common)
 
         // 打开流
         stream.open()
