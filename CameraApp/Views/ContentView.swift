@@ -32,6 +32,16 @@ struct ContentView: View {
     @State private var showNoteInput: Bool = false
     @State private var recordingStartTime: Date? = nil
 
+    // 自定义时间
+    @State private var useCustomTime: Bool = false
+    @State private var customTime: Date = Date()
+    @State private var showTimePicker: Bool = false
+
+    // 延迟拍摄
+    @State private var delaySeconds: Int = 0
+    @State private var countdownRemaining: Int = 0
+    @State private var isCountingDown: Bool = false
+
     // 实时定位数据
     @State private var currentLongitude: String = "---"
     @State private var currentLatitude: String = "---"
@@ -50,6 +60,12 @@ struct ContentView: View {
 
             VStack {
                 topToolBar
+
+                // 倒计时显示
+                if isCountingDown {
+                    countdownOverlay
+                        .transition(.scale.combined(with: .opacity))
+                }
 
                 // 录像指示器
                 if camera.isRecording {
@@ -108,6 +124,20 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - 倒计时显示
+
+    private var countdownOverlay: some View {
+        ZStack {
+            Circle()
+                .fill(Color.black.opacity(0.7))
+                .frame(width: 100, height: 100)
+            Text("\(countdownRemaining)")
+                .font(.system(size: 48, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+        }
+        .padding(.top, 20)
+    }
+
     // MARK: - 录像指示器
 
     private var recordingIndicator: some View {
@@ -149,6 +179,45 @@ struct ContentView: View {
 
             Spacer()
 
+            // 延迟拍摄选择
+            Menu {
+                Button(action: { delaySeconds = 0 }) {
+                    HStack {
+                        Text("关闭")
+                        if delaySeconds == 0 { Image(systemName: "checkmark") }
+                    }
+                }
+                Button(action: { delaySeconds = 3 }) {
+                    HStack {
+                        Text("3秒")
+                        if delaySeconds == 3 { Image(systemName: "checkmark") }
+                    }
+                }
+                Button(action: { delaySeconds = 5 }) {
+                    HStack {
+                        Text("5秒")
+                        if delaySeconds == 5 { Image(systemName: "checkmark") }
+                    }
+                }
+                Button(action: { delaySeconds = 10 }) {
+                    HStack {
+                        Text("10秒")
+                        if delaySeconds == 10 { Image(systemName: "checkmark") }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "timer")
+                        .font(.system(size: 18, weight: .medium))
+                    if delaySeconds > 0 {
+                        Text("\(delaySeconds)s")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                }
+                .foregroundColor(delaySeconds > 0 ? .yellow : .white)
+                .frame(width: 50, height: 44)
+            }
+
             // 闪光灯
             Button(action: { camera.cycleFlashMode() }) {
                 Image(systemName: camera.flashMode.icon)
@@ -179,7 +248,11 @@ struct ContentView: View {
             let timeStr = {
                 let f = DateFormatter()
                 f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-                return f.string(from: context.date)
+                if useCustomTime {
+                    return f.string(from: customTime) + " (自定义)"
+                } else {
+                    return f.string(from: context.date)
+                }
             }()
 
             VStack(alignment: .leading, spacing: 6) {
@@ -187,7 +260,23 @@ struct ContentView: View {
                 infoRow(label: "纬度", value: currentLatitude)
                 infoRow(label: "坐标", value: "WGS84 坐标系")
                 infoRow(label: "地址", value: currentAddress)
-                infoRow(label: "时间", value: timeStr)
+
+                // 时间行（可点击设置自定义时间）
+                HStack(spacing: 4) {
+                    Text("时间：")
+                        .foregroundColor(.white.opacity(0.8))
+                    Text(timeStr)
+                        .foregroundColor(useCustomTime ? .yellow : .white)
+                        .lineLimit(1)
+                    Spacer()
+                    Button(action: { showTimePicker = true }) {
+                        Image(systemName: useCustomTime ? "clock.badge.checkmark" : "clock")
+                            .font(.system(size: 14))
+                            .foregroundColor(useCustomTime ? .yellow : .white.opacity(0.7))
+                    }
+                }
+                .font(.system(size: 15, weight: .medium))
+
                 HStack(spacing: 4) {
                     Text("备注：")
                         .foregroundColor(.white.opacity(0.8))
@@ -210,6 +299,55 @@ struct ContentView: View {
             .background(Color.black.opacity(0.55))
             .cornerRadius(8)
             .padding(.horizontal, 12)
+            .sheet(isPresented: $showTimePicker) {
+                timePickerSheet
+            }
+        }
+    }
+
+    // MARK: - 时间设置弹窗
+
+    private var timePickerSheet: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                Toggle("使用自定义时间", isOn: $useCustomTime)
+                    .padding(.horizontal)
+
+                if useCustomTime {
+                    DatePicker(
+                        "选择时间",
+                        selection: $customTime,
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                    .datePickerStyle(.wheel)
+                    .labelsHidden()
+                    .padding(.horizontal)
+
+                    DatePicker(
+                        "选择时间",
+                        selection: $customTime,
+                        displayedComponents: .date
+                    )
+                    .datePickerStyle(.graphical)
+                    .padding(.horizontal)
+                }
+
+                Button("恢复为当前时间") {
+                    useCustomTime = false
+                    customTime = Date()
+                }
+                .foregroundColor(.blue)
+
+                Spacer()
+            }
+            .padding(.top)
+            .navigationTitle("设置水印时间")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") { showTimePicker = false }
+                }
+            }
         }
     }
 
@@ -345,9 +483,37 @@ struct ContentView: View {
     // MARK: - 拍照
 
     private func capturePhoto() {
-        guard !isCapturing, camera.isReady else { return }
-        isCapturing = true
-        camera.capturePhoto()
+        guard !isCapturing, !isCountingDown, camera.isReady else { return }
+
+        if delaySeconds > 0 {
+            startCountdown(delaySeconds) {
+                isCapturing = true
+                camera.capturePhoto()
+            }
+        } else {
+            isCapturing = true
+            camera.capturePhoto()
+        }
+    }
+
+    // MARK: - 倒计时
+
+    private func startCountdown(_ seconds: Int, onComplete: @escaping () -> Void) {
+        isCountingDown = true
+        countdownRemaining = seconds
+
+        func tick() {
+            if countdownRemaining > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    countdownRemaining -= 1
+                    tick()
+                }
+            } else {
+                isCountingDown = false
+                onComplete()
+            }
+        }
+        tick()
     }
 
     // MARK: - 录像
@@ -376,7 +542,9 @@ struct ContentView: View {
         lines.append("地址：\(currentAddress)")
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        lines.append("时间：\(f.string(from: Date()))")
+        // 使用自定义时间或当前时间
+        let displayTime = useCustomTime ? customTime : Date()
+        lines.append("时间：\(f.string(from: displayTime))")
         if !noteText.isEmpty {
             lines.append("备注：\(noteText)")
         }
