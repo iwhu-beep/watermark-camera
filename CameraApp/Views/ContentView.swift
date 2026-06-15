@@ -467,6 +467,7 @@ struct ContentView: View {
     private func uploadImage(_ image: UIImage) {
         BaiduUploader.shared.uploadImage(
             image,
+            fileNamePrefix: noteText.isEmpty ? nil : noteText,
             onProgress: { progress in print("[Baidu] 上传: \(Int(progress * 100))%") },
             onSuccess: {
                 uploadResultMessage = "已上传到百度网盘"
@@ -482,6 +483,7 @@ struct ContentView: View {
     private func uploadVideo(_ url: URL) {
         BaiduUploader.shared.uploadVideo(
             url,
+            fileNamePrefix: noteText.isEmpty ? nil : noteText,
             onProgress: { progress in print("[Baidu] 上传: \(Int(progress * 100))%") },
             onSuccess: {
                 uploadResultMessage = "视频已上传到百度网盘"

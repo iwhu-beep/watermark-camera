@@ -22,12 +22,17 @@ struct CameraPreviewView: UIViewRepresentable {
         DispatchQueue.main.async {
             view.previewLayer.session = session
             view.previewLayer.videoGravity = .resizeAspectFill
+            view.updatePreviewOrientation()
+            view.startOrientationUpdates()
         }
         view.backgroundColor = .black
         return view
     }
 
     func updateUIView(_ uiView: PreviewView, context: Context) {
+        DispatchQueue.main.async {
+            uiView.updatePreviewOrientation()
+        }
     }
 }
 
@@ -45,5 +50,44 @@ class PreviewView: UIView {
             fatalError("Layer is not AVCaptureVideoPreviewLayer")
         }
         return layer
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    /// 开始监听设备方向变化
+    func startOrientationUpdates() {
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(orientationChanged),
+            name: UIDevice.orientationDidChangeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func orientationChanged() {
+        updatePreviewOrientation()
+    }
+
+    /// 根据设备方向更新预览方向
+    func updatePreviewOrientation() {
+        guard let connection = previewLayer.connection,
+              connection.isVideoOrientationSupported else { return }
+
+        let orientation: AVCaptureVideoOrientation
+        switch UIDevice.current.orientation {
+        case .landscapeLeft:
+            orientation = .landscapeRight
+        case .landscapeRight:
+            orientation = .landscapeLeft
+        case .portraitUpsideDown:
+            orientation = .portraitUpsideDown
+        default:
+            orientation = .portrait
+        }
+
+        connection.videoOrientation = orientation
     }
 }

@@ -374,6 +374,7 @@ final class BaiduUploader: NSObject {
 
     func uploadImage(
         _ image: UIImage,
+        fileNamePrefix: String? = nil,
         onProgress: ((Double) -> Void)? = nil,
         onSuccess: @escaping () -> Void,
         onFailure: @escaping (BaiduUploadError) -> Void
@@ -386,7 +387,14 @@ final class BaiduUploader: NSObject {
         let tempDir = FileManager.default.temporaryDirectory
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss"
-        let fileName = "IMG_\(formatter.string(from: Date())).jpg"
+        let timestamp = formatter.string(from: Date())
+
+        let fileName: String
+        if let prefix = fileNamePrefix, !prefix.isEmpty {
+            fileName = "\(prefix)_\(timestamp).jpg"
+        } else {
+            fileName = "IMG_\(timestamp).jpg"
+        }
         let tempURL = tempDir.appendingPathComponent(fileName)
 
         do {
@@ -414,18 +422,55 @@ final class BaiduUploader: NSObject {
 
     func uploadVideo(
         _ videoURL: URL,
+        fileNamePrefix: String? = nil,
         onProgress: ((Double) -> Void)? = nil,
         onSuccess: @escaping () -> Void,
         onFailure: @escaping (BaiduUploadError) -> Void
     ) {
-        let fileName = videoURL.lastPathComponent
+        let originalName = videoURL.lastPathComponent
+        let fileName: String
+        if let prefix = fileNamePrefix, !prefix.isEmpty {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyyMMdd_HHmmss"
+            let timestamp = formatter.string(from: Date())
+            fileName = "\(prefix)_\(timestamp).mp4"
+        } else {
+            fileName = originalName
+        }
+
+        // 如果需要重命名，复制到新文件
+        let uploadURL: URL
+        if fileName != originalName {
+            let tempDir = FileManager.default.temporaryDirectory
+            uploadURL = tempDir.appendingPathComponent(fileName)
+            try? FileManager.default.removeItem(at: uploadURL)
+            do {
+                try FileManager.default.copyItem(at: videoURL, to: uploadURL)
+            } catch {
+                DispatchQueue.main.async { onFailure(.fileReadFailed) }
+                return
+            }
+        } else {
+            uploadURL = videoURL
+        }
+
         let remotePath = "/apps/拍照/\(fileName)"
         uploadFile(
-            localURL: videoURL,
+            localURL: uploadURL,
             remotePath: remotePath,
             onProgress: onProgress,
-            onSuccess: onSuccess,
-            onFailure: onFailure
+            onSuccess: {
+                if uploadURL != videoURL {
+                    try? FileManager.default.removeItem(at: uploadURL)
+                }
+                onSuccess()
+            },
+            onFailure: { error in
+                if uploadURL != videoURL {
+                    try? FileManager.default.removeItem(at: uploadURL)
+                }
+                onFailure(error)
+            }
         )
     }
 

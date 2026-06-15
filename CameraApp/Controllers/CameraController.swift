@@ -242,6 +242,12 @@ class CameraController: ObservableObject {
             return
         }
 
+        // 设置拍照时的视频方向（修正横屏拍摄）
+        if let connection = photoOutput.connection(with: .video),
+           connection.isVideoOrientationSupported {
+            connection.videoOrientation = currentVideoOrientation()
+        }
+
         let settings = AVCapturePhotoSettings()
         settings.flashMode = flashMode.avFlashMode
 
@@ -260,6 +266,12 @@ class CameraController: ObservableObject {
         guard let provider = watermarkProvider else {
             print("[Camera] watermarkProvider 未设置")
             return
+        }
+
+        // 设置视频输出连接方向（修正横屏拍摄）
+        if let connection = videoOutput.connection(with: .video),
+           connection.isVideoOrientationSupported {
+            connection.videoOrientation = currentVideoOrientation()
         }
 
         let size = videoOutput.recommendedVideoSettingsForAssetWriter(writingTo: .mp4)
@@ -292,6 +304,20 @@ class CameraController: ObservableObject {
     }
 
     // MARK: - 内部方法
+
+    /// 获取当前视频方向（根据设备方向）
+    private func currentVideoOrientation() -> AVCaptureVideoOrientation {
+        switch UIDevice.current.orientation {
+        case .landscapeLeft:
+            return .landscapeRight
+        case .landscapeRight:
+            return .landscapeLeft
+        case .portraitUpsideDown:
+            return .portraitUpsideDown
+        default:
+            return .portrait
+        }
+    }
 
     private func addVideoInput(position: AVCaptureDevice.Position) {
         guard addVideoInputInternal(position: position) else {
