@@ -20,24 +20,38 @@ enum CoordinateFormat: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+// MARK: - 相机模式
+
+/// 相机工作模式
+enum CameraMode: String, CaseIterable {
+    case photo = "拍照"
+    case video = "录像"
+}
+
 // MARK: - 应用设置
 
 /// 全局设置模型，ObservableObject驱动UI刷新
 class AppSettings: ObservableObject {
 
-    // MARK: 云盘上传
+    // MARK: FTP上传
 
-    /// 是否开启自动上传到阿里云盘
+    /// 是否开启自动上传
     @Published var autoUpload: Bool = false
 
-    /// 阿里云盘开放平台 Client ID
-    @Published var aliyunClientId: String = ""
+    /// FTP 服务器地址（如 ftp.example.com）
+    @Published var ftpHost: String = ""
 
-    /// 阿里云盘 Refresh Token（用于自动刷新 Access Token）
-    @Published var aliyunRefreshToken: String = ""
+    /// FTP 端口（默认21）
+    @Published var ftpPort: String = "21"
 
-    /// 上传目标文件夹ID（默认根目录 "root"）
-    @Published var uploadFolderId: String = "root"
+    /// FTP 用户名
+    @Published var ftpUsername: String = ""
+
+    /// FTP 密码
+    @Published var ftpPassword: String = ""
+
+    /// FTP 远程目录（如 /photos/camera/）
+    @Published var ftpRemoteDir: String = "/"
 
     // MARK: 坐标格式
 

@@ -2,7 +2,7 @@
 //  SettingsView.swift
 //  CameraApp
 //
-//  附加设置页：自动上传开关、坐标格式切换、水印大小调节
+//  设置页：FTP上传配置、坐标格式、水印设置
 //  路径: CameraApp/Views/SettingsView.swift
 //
 
@@ -16,30 +16,37 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             Form {
-                // ========== 云盘上传设置 ==========
+                // ========== FTP 上传设置 ==========
                 Section {
-                    Toggle("自动上传到阿里云盘", isOn: $settings.autoUpload)
+                    Toggle("自动上传到 FTP", isOn: $settings.autoUpload)
 
                     if settings.autoUpload {
-                        TextField("Client ID", text: $settings.aliyunClientId)
+                        TextField("服务器地址 (如 ftp.example.com)", text: $settings.ftpHost)
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
                             .font(.system(size: 14))
 
-                        SecureField("Refresh Token", text: $settings.aliyunRefreshToken)
+                        TextField("端口 (默认21)", text: $settings.ftpPort)
+                            .keyboardType(.numberPad)
+                            .font(.system(size: 14))
+
+                        TextField("用户名", text: $settings.ftpUsername)
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
                             .font(.system(size: 14))
 
-                        TextField("目标文件夹ID（默认 root）", text: $settings.uploadFolderId)
+                        SecureField("密码", text: $settings.ftpPassword)
+                            .font(.system(size: 14))
+
+                        TextField("远程目录 (如 /photos/)", text: $settings.ftpRemoteDir)
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
                             .font(.system(size: 14))
                     }
                 } header: {
-                    Text("云盘上传")
+                    Text("FTP 上传")
                 } footer: {
-                    Text("在阿里云盘开放平台注册应用获取 Client ID，通过 OAuth2 授权获取 Refresh Token")
+                    Text("配置 FTP 服务器信息，拍照/录像后自动上传文件")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -53,7 +60,6 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    // 格式预览
                     HStack {
                         Text("预览")
                             .font(.caption)
@@ -78,27 +84,19 @@ struct SettingsView: View {
                                 .font(.system(.body, design: .monospaced))
                         }
 
-                        Slider(
-                            value: $settings.watermarkFontSize,
-                            in: 10...48,
-                            step: 2
-                        ) {
+                        Slider(value: $settings.watermarkFontSize, in: 10...48, step: 2) {
                             Text("水印大小")
                         } minimumValueLabel: {
-                            Text("小")
-                                .font(.caption2)
+                            Text("小").font(.caption2)
                         } maximumValueLabel: {
-                            Text("大")
-                                .font(.caption2)
+                            Text("大").font(.caption2)
                         }
                     }
 
-                    // 水印预览
                     VStack(alignment: .leading, spacing: 4) {
                         Text("预览效果")
                             .font(.caption)
                             .foregroundColor(.secondary)
-
                         watermarkPreview
                     }
                     .padding(.vertical, 4)
@@ -116,14 +114,14 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - 坐标格式预览文本
+    // MARK: - 坐标格式预览
 
     private var previewCoordinateText: String {
         switch settings.coordinateFormat {
         case .decimal:
-            return "116.407400°E 39.904200°N"
+            return "116.407400\u{00b0}E 39.904200\u{00b0}N"
         case .dms:
-            return "116°24'26.6\"E 39°54'15.1\"N"
+            return "116\u{00b0}24'26.6\"E 39\u{00b0}54'15.1\"N"
         }
     }
 
@@ -131,26 +129,20 @@ struct SettingsView: View {
 
     private var watermarkPreview: some View {
         ZStack(alignment: .bottomLeading) {
-            // 模拟照片背景
             Rectangle()
                 .fill(Color.gray.opacity(0.3))
                 .frame(height: 80)
-                .overlay(
-                    Text("模拟照片区域")
-                        .foregroundColor(.white.opacity(0.3))
-                )
+                .overlay(Text("模拟照片区域").foregroundColor(.white.opacity(0.3)))
 
-            // 模拟水印
             VStack(alignment: .leading, spacing: 2) {
-                Text("经度：116.407400°E 纬度：39.904200°N")
+                Text("经度:116.407400\u{00b0}E 纬度:39.904200\u{00b0}N")
                     .font(.system(size: min(settings.watermarkFontSize * 0.5, 14), weight: .bold))
                     .foregroundColor(.white)
-                    .shadow(color: .black, radius: 1, x: 0, y: 0)
-
+                    .shadow(color: .black, radius: 1)
                 Text("示例备注内容")
                     .font(.system(size: min(settings.watermarkFontSize * 0.5, 14), weight: .bold))
                     .foregroundColor(.white)
-                    .shadow(color: .black, radius: 1, x: 0, y: 0)
+                    .shadow(color: .black, radius: 1)
             }
             .padding(8)
         }

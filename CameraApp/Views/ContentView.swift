@@ -2,10 +2,11 @@
 //  ContentView.swift
 //  CameraApp
 //
-//  主界面：全屏取景 + 实时信息叠加 + 底部控制栏
+//  主界面：全屏取景 + 实时信息叠加 + 拍照/录像模式切换
 //  路径: CameraApp/Views/ContentView.swift
 //
 
+import AVFoundation
 import Photos
 import SwiftUI
 
@@ -18,88 +19,63 @@ struct ContentView: View {
 
     // MARK: - 状态对象
 
-    @StateObject private var cameraController = CameraController()
+    @StateObject private var camera = CameraController()
 
     // MARK: - UI状态
 
-    /// 备注输入文本
     @State private var noteText: String = ""
-    /// 是否正在拍照（防重复点击）
     @State private var isCapturing: Bool = false
-    /// 是否显示上传结果弹窗
-    @State private var showUploadResult: Bool = false
-    /// 上传结果消息
-    @State private var uploadResultMessage: String = ""
-    /// 是否显示设置页
     @State private var showSettings: Bool = false
-    /// 是否显示定位权限引导弹窗
     @State private var showLocationPermissionAlert: Bool = false
-    /// 当前时间（每秒更新）
-    @State private var currentTime: String = ""
-    /// 当前经度
-    @State private var currentLongitude: String = "---"
-    /// 当前纬度
-    @State private var currentLatitude: String = "---"
-    /// 坐标系
-    @State private var coordinateSystem: String = "WGS84 坐标系"
-    /// 地址
-    @State private var currentAddress: String = "定位中..."
-    /// 是否正在显示备注输入
+    @State private var showUploadResult: Bool = false
+    @State private var uploadResultMessage: String = ""
     @State private var showNoteInput: Bool = false
-    /// 定时器
-    @State private var timer: Timer? = nil
+
+    // 实时定位数据
+    @State private var currentLongitude: String = "---"
+    @State private var currentLatitude: String = "---"
+    @State private var currentAddress: String = "定位中..."
+
+    // 相机模式
+    @State private var cameraMode: CameraMode = .photo
 
     // MARK: - 视图主体
 
     var body: some View {
         ZStack {
-            // ========== 全屏相机预览 ==========
-            CameraPreviewView(session: cameraController.session)
+            // 全屏相机预览
+            CameraPreviewView(session: camera.session)
                 .ignoresSafeArea()
 
-            // ========== 信息叠加层 ==========
             VStack {
-                // 顶部工具栏
                 topToolBar
-
                 Spacer()
-
-                // 信息叠加区（底部偏上）
                 infoOverlay
-
-                // 底部控制栏
+                modeSwitchBar
                 bottomControlBar
             }
         }
         .navigationBarHidden(true)
         .statusBar(hidden: true)
         .onAppear {
-            // 延迟启动，确保 UI 完全加载
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 permissionManager.requestPermissions()
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                cameraController.setupCamera()
-                cameraController.onPhotoCaptured = handleCapturedPhoto
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                camera.setupCamera()
+                camera.onPhotoCaptured = handleCapturedPhoto
+                camera.onVideoRecorded = handleVideoRecorded
             }
-            // 启动定位
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 startLocationUpdates()
-            }
-            // 启动时钟
-            updateTime()
-            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-                updateTime()
             }
         }
         .onDisappear {
-            cameraController.stopCamera()
-            timer?.invalidate()
-            timer = nil
+            camera.stopCamera()
+            if camera.isRecording { camera.stopRecording() }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView()
-                .environmentObject(settings)
+            SettingsView().environmentObject(settings)
         }
         .alert("上传结果", isPresented: $showUploadResult) {
             Button("确定", role: .cancel) {}
@@ -121,129 +97,114 @@ struct ContentView: View {
     // MARK: - 顶部工具栏
 
     private var topToolBar: some View {
-        HStack(spacing: 0) {
-            // 设置/菜单
+        HStack {
             Button(action: { showSettings = true }) {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
             }
-
             Spacer()
-
-            // 闪光灯
             Button(action: {}) {
                 Image(systemName: "bolt.slash.fill")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
             }
-
-            // 切换摄像头
             Button(action: {}) {
                 Image(systemName: "camera.rotate.fill")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
             }
-
-            // 更多
-            Button(action: {}) {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(.white)
-                    .frame(width: 44, height: 44)
-            }
         }
         .padding(.horizontal, 8)
-        .padding(.top, 8)
         .background(
-            LinearGradient(
-                colors: [Color.black.opacity(0.5), Color.clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea(edges: .top)
+            LinearGradient(colors: [.black.opacity(0.5), .clear], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea(edges: .top)
         )
+    }
+
+    // MARK: - 实时时间（使用TimelineView避免Timer导致全局刷新）
+
+    private func currentTimeString() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return f.string(from: Date())
     }
 
     // MARK: - 信息叠加层
 
     private var infoOverlay: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // 经度
-            HStack(spacing: 4) {
-                Text("经度：")
-                    .foregroundColor(.white.opacity(0.8))
-                Text(currentLongitude)
-                    .foregroundColor(.white)
-            }
-            .font(.system(size: 14, weight: .medium))
+        TimelineView(.periodic(from: .now, by: 1.0)) { context in
+            let timeStr = {
+                let f = DateFormatter()
+                f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                return f.string(from: context.date)
+            }()
 
-            // 纬度
-            HStack(spacing: 4) {
-                Text("纬度：")
-                    .foregroundColor(.white.opacity(0.8))
-                Text(currentLatitude)
-                    .foregroundColor(.white)
+            VStack(alignment: .leading, spacing: 5) {
+                infoRow(label: "经度", value: currentLongitude)
+                infoRow(label: "纬度", value: currentLatitude)
+                infoRow(label: "坐标", value: "WGS84 坐标系")
+                infoRow(label: "地址", value: currentAddress)
+                infoRow(label: "时间", value: timeStr)
+                HStack(spacing: 4) {
+                    Text("备注：")
+                        .foregroundColor(.white.opacity(0.8))
+                    if showNoteInput {
+                        TextField("输入备注...", text: $noteText)
+                            .foregroundColor(.white)
+                            .tint(.white)
+                            .font(.system(size: 13, weight: .medium))
+                            .onSubmit { showNoteInput = false }
+                    } else {
+                        Text(noteText.isEmpty ? "点击添加" : noteText)
+                            .foregroundColor(noteText.isEmpty ? .white.opacity(0.5) : .white)
+                            .onTapGesture { showNoteInput = true }
+                    }
+                }
+                .font(.system(size: 13, weight: .medium))
             }
-            .font(.system(size: 14, weight: .medium))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color.black.opacity(0.55))
+            .cornerRadius(8)
+            .padding(.horizontal, 12)
+        }
+    }
 
-            // 坐标系
-            HStack(spacing: 4) {
-                Text("坐标：")
-                    .foregroundColor(.white.opacity(0.8))
-                Text(coordinateSystem)
-                    .foregroundColor(.white)
-            }
-            .font(.system(size: 14, weight: .medium))
+    private func infoRow(label: String, value: String) -> some View {
+        HStack(spacing: 4) {
+            Text("\(label)：")
+                .foregroundColor(.white.opacity(0.8))
+            Text(value)
+                .foregroundColor(.white)
+                .lineLimit(1)
+        }
+        .font(.system(size: 13, weight: .medium))
+    }
 
-            // 地址
-            HStack(spacing: 4) {
-                Text("地址：")
-                    .foregroundColor(.white.opacity(0.8))
-                Text(currentAddress)
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-            }
-            .font(.system(size: 14, weight: .medium))
+    // MARK: - 模式切换栏
 
-            // 时间
-            HStack(spacing: 4) {
-                Text("时间：")
-                    .foregroundColor(.white.opacity(0.8))
-                Text(currentTime)
-                    .foregroundColor(.white)
-            }
-            .font(.system(size: 14, weight: .medium))
-
-            // 备注
-            HStack(spacing: 4) {
-                Text("备注：")
-                    .foregroundColor(.white.opacity(0.8))
-                if showNoteInput {
-                    TextField("输入备注...", text: $noteText)
-                        .foregroundColor(.white)
-                        .tint(.white)
-                        .font(.system(size: 14, weight: .medium))
-                } else {
-                    Text(noteText.isEmpty ? "点击添加" : noteText)
-                        .foregroundColor(noteText.isEmpty ? .white.opacity(0.5) : .white)
-                        .lineLimit(1)
-                        .onTapGesture {
-                            showNoteInput = true
-                        }
+    private var modeSwitchBar: some View {
+        HStack(spacing: 0) {
+            ForEach(CameraMode.allCases, id: \.self) { mode in
+                Button(action: {
+                    if !camera.isRecording { cameraMode = mode }
+                }) {
+                    Text(mode.rawValue)
+                        .font(.system(size: 15, weight: cameraMode == mode ? .bold : .regular))
+                        .foregroundColor(cameraMode == mode ? .orange : .white.opacity(0.7))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                 }
             }
-            .font(.system(size: 14, weight: .medium))
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color.black.opacity(0.55))
+        .background(Color.black.opacity(0.3))
         .cornerRadius(8)
-        .padding(.horizontal, 12)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 60)
+        .padding(.top, 4)
     }
 
     // MARK: - 底部控制栏
@@ -252,37 +213,32 @@ struct ContentView: View {
         HStack {
             // 左：相册
             Button(action: {}) {
-                VStack(spacing: 4) {
+                VStack(spacing: 2) {
                     Image(systemName: "photo.on.rectangle")
                         .font(.system(size: 22))
-                        .foregroundColor(.white)
                     Text("图册")
                         .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.8))
                 }
+                .foregroundColor(.white)
                 .frame(width: 60, height: 60)
             }
 
             Spacer()
 
-            // 中：快门按钮
-            Button(action: capturePhoto) {
-                ZStack {
-                    Circle()
-                        .strokeBorder(Color.white, lineWidth: 3)
-                        .frame(width: 72, height: 72)
-                    Circle()
-                        .fill(isCapturing ? Color.gray : Color.white)
-                        .frame(width: 60, height: 60)
+            // 中：快门/录制按钮
+            Group {
+                if cameraMode == .photo {
+                    shutterButton
+                } else {
+                    recordButton
                 }
             }
-            .disabled(isCapturing)
 
             Spacer()
 
             // 右：水印
             Button(action: {}) {
-                VStack(spacing: 4) {
+                VStack(spacing: 2) {
                     Image(systemName: "text.bubble.fill")
                         .font(.system(size: 22))
                         .foregroundColor(.orange)
@@ -294,28 +250,216 @@ struct ContentView: View {
             }
         }
         .padding(.horizontal, 40)
-        .padding(.vertical, 20)
+        .padding(.vertical, 16)
         .background(
-            LinearGradient(
-                colors: [Color.clear, Color.black.opacity(0.6)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
         )
     }
 
-    // MARK: - 时间更新
+    // MARK: - 快门按钮
 
-    private func updateTime() {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        currentTime = formatter.string(from: Date())
+    private var shutterButton: some View {
+        Button(action: capturePhoto) {
+            ZStack {
+                Circle()
+                    .strokeBorder(Color.white, lineWidth: 3)
+                    .frame(width: 72, height: 72)
+                Circle()
+                    .fill(isCapturing ? Color.gray : Color.white)
+                    .frame(width: 60, height: 60)
+            }
+        }
+        .disabled(isCapturing || !camera.isReady)
+    }
+
+    // MARK: - 录制按钮
+
+    private var recordButton: some View {
+        Button(action: toggleRecording) {
+            ZStack {
+                Circle()
+                    .strokeBorder(Color.white, lineWidth: 3)
+                    .frame(width: 72, height: 72)
+                if camera.isRecording {
+                    // 停止：方块
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.red)
+                        .frame(width: 28, height: 28)
+                } else {
+                    // 开始：红点
+                    Circle()
+                        .fill(camera.isReady ? Color.red : Color.gray)
+                        .frame(width: 60, height: 60)
+                }
+            }
+        }
+        .disabled(!camera.isReady)
+    }
+
+    // MARK: - 拍照
+
+    private func capturePhoto() {
+        guard !isCapturing, camera.isReady else { return }
+        isCapturing = true
+        camera.capturePhoto()
+    }
+
+    // MARK: - 录像
+
+    private func toggleRecording() {
+        if camera.isRecording {
+            camera.stopRecording()
+        } else {
+            // 更新水印文本给录制器
+            camera.watermarkText = buildWatermarkText()
+            camera.startRecording()
+        }
+    }
+
+    // MARK: - 构建水印文本
+
+    private func buildWatermarkText() -> String {
+        var lines: [String] = []
+        lines.append("经度: \(currentLongitude)")
+        lines.append("纬度: \(currentLatitude)")
+        lines.append("坐标: WGS84 坐标系")
+        lines.append("地址: \(currentAddress)")
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        lines.append("时间: \(f.string(from: Date()))")
+        if !noteText.isEmpty {
+            lines.append("备注: \(noteText)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - 拍照完成回调
+
+    private func handleCapturedPhoto(_ image: UIImage?) {
+        defer { isCapturing = false }
+        guard let image = image else {
+            print("[ContentView] 拍照失败")
+            return
+        }
+
+        // 生成坐标文本
+        let coordinateText: String
+        if case .success = LocationManager.shared.lastResult {
+            coordinateText = LocationManager.shared.formatCoordinate(format: settings.coordinateFormat)
+        } else {
+            coordinateText = "经度:\(currentLongitude) 纬度:\(currentLatitude)"
+        }
+
+        // 绘制水印
+        let watermarkedImage = ImageWatermark.draw(
+            on: image,
+            coordinate: coordinateText,
+            note: noteText.isEmpty ? nil : noteText
+        )
+
+        // 保存到相册
+        savePhotoToLibrary(watermarkedImage)
+
+        // FTP 上传
+        if settings.autoUpload && !settings.ftpHost.isEmpty {
+            ftpUploadImage(watermarkedImage)
+        }
+    }
+
+    // MARK: - 录像完成回调
+
+    private func handleVideoRecorded(_ url: URL?) {
+        guard let url = url else {
+            print("[ContentView] 录像失败")
+            return
+        }
+        print("[ContentView] 视频已保存: \(url.lastPathComponent)")
+
+        // 保存到相册
+        saveVideoToLibrary(url)
+
+        // FTP 上传
+        if settings.autoUpload && !settings.ftpHost.isEmpty {
+            ftpUploadVideo(url)
+        }
+    }
+
+    // MARK: - 保存相册
+
+    private func savePhotoToLibrary(_ image: UIImage) {
+        guard hasPhotoLibraryPermission() else { return }
+        PHPhotoLibrary.shared().performChanges({
+            PHAssetChangeRequest.creationRequestForAsset(from: image)
+        }) { success, error in
+            print("[ContentView] 照片保存: \(success ? "成功" : "失败 - \(error?.localizedDescription ?? "")")")
+        }
+    }
+
+    private func saveVideoToLibrary(_ url: URL) {
+        guard hasPhotoLibraryPermission() else { return }
+        PHPhotoLibrary.shared().performChanges({
+            PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
+        }) { success, error in
+            print("[ContentView] 视频保存: \(success ? "成功" : "失败 - \(error?.localizedDescription ?? "")")")
+        }
+    }
+
+    private func hasPhotoLibraryPermission() -> Bool {
+        let status: PHAuthorizationStatus
+        if #available(iOS 14, *) {
+            status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+        } else {
+            status = PHPhotoLibrary.authorizationStatus()
+        }
+        return status == .authorized || status == .limited
+    }
+
+    // MARK: - FTP 上传
+
+    private func ftpUploadImage(_ image: UIImage) {
+        syncFTPConfig()
+        FTPUploader.shared.uploadImage(
+            image,
+            onProgress: { progress in print("[FTP] 上传: \(Int(progress * 100))%") },
+            onSuccess: {
+                uploadResultMessage = "上传成功"
+                showUploadResult = true
+            },
+            onFailure: { error in
+                uploadResultMessage = "上传失败: \(error.localizedDescription)"
+                showUploadResult = true
+            }
+        )
+    }
+
+    private func ftpUploadVideo(_ url: URL) {
+        syncFTPConfig()
+        FTPUploader.shared.uploadVideo(
+            url,
+            onProgress: { progress in print("[FTP] 上传: \(Int(progress * 100))%") },
+            onSuccess: {
+                uploadResultMessage = "视频上传成功"
+                showUploadResult = true
+            },
+            onFailure: { error in
+                uploadResultMessage = "上传失败: \(error.localizedDescription)"
+                showUploadResult = true
+            }
+        )
+    }
+
+    /// 同步设置到 FTP 配置
+    private func syncFTPConfig() {
+        FTPConfig.host = settings.ftpHost
+        FTPConfig.port = Int(settings.ftpPort) ?? 21
+        FTPConfig.username = settings.ftpUsername
+        FTPConfig.password = settings.ftpPassword
+        FTPConfig.remoteDir = settings.ftpRemoteDir
     }
 
     // MARK: - 定位更新
 
     private func startLocationUpdates() {
-        // 请求首次定位
         LocationManager.shared.requestLocation { [self] result in
             handleLocationResult(result)
         }
@@ -327,6 +471,12 @@ struct ContentView: View {
             currentLongitude = String(format: "%.6f", lon)
             currentLatitude = String(format: "%.6f", lat)
             currentAddress = "GPS定位"
+            // 成功后继续请求（保持更新）
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+                LocationManager.shared.requestLocation { result in
+                    handleLocationResult(result)
+                }
+            }
         case .failure(let error):
             currentLongitude = "---"
             currentLatitude = "---"
@@ -337,9 +487,8 @@ struct ContentView: View {
             case .serviceDisabled:
                 currentAddress = "定位服务已关闭"
             case .timeout:
-                currentAddress = "定位超时，重试中..."
-                // 超时后重试
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                currentAddress = "定位超时"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                     LocationManager.shared.requestLocation { result in
                         handleLocationResult(result)
                     }
@@ -348,107 +497,5 @@ struct ContentView: View {
                 currentAddress = "定位错误"
             }
         }
-    }
-
-    // MARK: - 拍照流程
-
-    private func capturePhoto() {
-        guard !isCapturing else { return }
-
-        // 检查相机是否已就绪
-        guard cameraController.isReady else {
-            print("[ContentView] 相机未就绪，无法拍照")
-            return
-        }
-
-        isCapturing = true
-
-        // 直接拍照（定位已在后台持续更新）
-        cameraController.capturePhoto()
-    }
-
-    /// 拍照完成回调（已在主线程）
-    private func handleCapturedPhoto(_ image: UIImage?) {
-        defer { isCapturing = false }
-
-        guard let image = image else {
-            print("[ContentView] 拍照失败，图像为nil")
-            return
-        }
-
-        // 1. 生成坐标文本
-        let coordinateText: String
-        if case .success = LocationManager.shared.lastResult {
-            coordinateText = LocationManager.shared.formatCoordinate(format: settings.coordinateFormat)
-        } else {
-            coordinateText = "经度：\(currentLongitude) 纬度：\(currentLatitude)"
-        }
-
-        // 2. 绘制水印
-        let watermarkedImage = ImageWatermark.draw(
-            on: image,
-            coordinate: coordinateText,
-            note: noteText.isEmpty ? nil : noteText
-        )
-
-        // 3. 保存到相册
-        saveToPhotoLibrary(watermarkedImage)
-
-        // 4. 自动上传（如果开启且已配置凭据）
-        if settings.autoUpload
-            && !settings.aliyunClientId.isEmpty
-            && !settings.aliyunRefreshToken.isEmpty {
-            uploadToCloud(watermarkedImage)
-        }
-    }
-
-    // MARK: - 保存相册
-
-    private func saveToPhotoLibrary(_ image: UIImage) {
-        let status: PHAuthorizationStatus
-        if #available(iOS 14, *) {
-            status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
-        } else {
-            status = PHPhotoLibrary.authorizationStatus()
-        }
-
-        guard status == .authorized || status == .limited else {
-            print("[ContentView] 相册权限未授予，无法保存")
-            return
-        }
-
-        PHPhotoLibrary.shared().performChanges({
-            PHAssetChangeRequest.creationRequestForAsset(from: image)
-        }) { success, error in
-            if success {
-                print("[ContentView] 照片已保存到相册")
-            } else {
-                print("[ContentView] 保存相册失败: \(error?.localizedDescription ?? "未知错误")")
-            }
-        }
-    }
-
-    // MARK: - 云盘上传
-
-    private func uploadToCloud(_ image: UIImage) {
-        AliyunDriveConfig.clientId = settings.aliyunClientId
-        AliyunDriveConfig.refreshToken = settings.aliyunRefreshToken
-        AliyunDriveConfig.uploadFolderId = settings.uploadFolderId
-
-        CloudUploader.shared.uploadImage(
-            image,
-            folderId: settings.uploadFolderId,
-            onProgress: { fraction in
-                print("[上传进度] \(Int(fraction * 100))%")
-            },
-            onSuccess: { downloadUrl in
-                uploadResultMessage = "上传成功！\n\(downloadUrl)"
-                showUploadResult = true
-            },
-            onFailure: { error in
-                uploadResultMessage = "上传失败: \(error.localizedDescription)"
-                showUploadResult = true
-            }
-        )
     }
 }
