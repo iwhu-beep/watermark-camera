@@ -222,8 +222,8 @@ final class FTPUploader: NSObject {
         let stream = cfStream as OutputStream
 
         // 设置 FTP 凭据
-        stream.setProperty(username as NSString, forKey: Stream.PropertyKey(kCFStreamPropertyFTPUserName))
-        stream.setProperty(password as NSString, forKey: Stream.PropertyKey(kCFStreamPropertyFTPPassword))
+        stream.setProperty(username as NSString, forKey: Stream.PropertyKey(kCFStreamPropertyFTPUserName as String))
+        stream.setProperty(password as NSString, forKey: Stream.PropertyKey(kCFStreamPropertyFTPPassword as String))
 
         // 设置代理
         stream.delegate = self
