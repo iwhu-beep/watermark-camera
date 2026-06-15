@@ -2,7 +2,7 @@
 //  FTPUploader.swift
 //  CameraApp
 //
-//  FTP 文件上传工具类，使用 URLSession + CFWriteStream
+//  FTP 文件上传工具类，使用 CFWriteStream
 //  路径: CameraApp/Utilities/FTPUploader.swift
 //
 
@@ -13,15 +13,10 @@ import UIKit
 
 /// FTP 服务器配置
 struct FTPConfig {
-    /// 服务器地址（如 ftp.example.com）
     static var host: String = ""
-    /// 端口（默认21）
     static var port: Int = 21
-    /// 用户名
     static var username: String = ""
-    /// 密码
     static var password: String = ""
-    /// 远程目录（如 /photos/）
     static var remoteDir: String = "/"
 }
 
@@ -53,21 +48,6 @@ enum FTPUploadError: Error, LocalizedError {
 // MARK: - FTP 上传工具类
 
 /// FTP 文件上传工具（单例）
-///
-/// 用法示例：
-/// ```swift
-/// FTPConfig.host = "ftp.example.com"
-/// FTPConfig.port = 21
-/// FTPConfig.username = "user"
-/// FTPConfig.password = "pass"
-/// FTPConfig.remoteDir = "/photos/"
-///
-/// FTPUploader.shared.uploadFile(
-///     localURL: fileURL,
-///     onSuccess: { print("上传成功") },
-///     onFailure: { error in print("失败: \(error)") }
-/// )
-/// ```
 final class FTPUploader {
 
     static let shared = FTPUploader()
@@ -75,26 +55,17 @@ final class FTPUploader {
 
     // MARK: - 上传本地文件
 
-    /// 上传本地文件到 FTP 服务器
-    ///
-    /// - Parameters:
-    ///   - localURL: 本地文件URL
-    ///   - onProgress: 进度回调（0.0~1.0），主线程
-    ///   - onSuccess: 成功回调，主线程
-    ///   - onFailure: 失败回调，主线程
     func uploadFile(
         localURL: URL,
         onProgress: ((Double) -> Void)? = nil,
         onSuccess: @escaping () -> Void,
         onFailure: @escaping (FTPUploadError) -> Void
     ) {
-        // 配置校验
         guard !FTPConfig.host.isEmpty else {
             deliverFailure(onFailure, error: .notConfigured)
             return
         }
 
-        // 读取文件数据
         guard let fileData = try? Data(contentsOf: localURL) else {
             deliverFailure(onFailure, error: .fileReadFailed)
             return
@@ -103,7 +74,6 @@ final class FTPUploader {
         let fileName = localURL.lastPathComponent
         let remotePath = buildRemotePath(fileName: fileName)
 
-        // 构建 FTP URL
         guard let ftpURL = URL(string: remotePath) else {
             deliverFailure(onFailure, error: .connectionFailed("无效的 FTP URL"))
             return
@@ -111,34 +81,32 @@ final class FTPUploader {
 
         print("[FTPUploader] 上传到: \(remotePath)")
 
-        // 使用 InputStream + CFWriteStream 上传
+        // 使用 InputStream 读取文件
         let inputStream = InputStream(data: fileData)
         inputStream.open()
 
-        guard let writeStream = CFWriteStreamCreateWithFTPURL(
+        // 创建 CFWriteStream（返回 Unmanaged，需要 takeRetainedValue）
+        let unmanaged = CFWriteStreamCreateWithFTPURL(
             kCFAllocatorDefault,
             ftpURL as CFURL
-        ) else {
-            deliverFailure(onFailure, error: .connectionFailed("无法创建 FTP 写入流"))
-            inputStream.close()
-            return
-        }
+        )
+        let writeStream = unmanaged.takeRetainedValue()
 
         // 设置用户名和密码
         CFWriteStreamSetProperty(
             writeStream,
-            .ftpUserName,
+            kCFStreamPropertyFTPUserName,
             FTPConfig.username as CFString
         )
         CFWriteStreamSetProperty(
             writeStream,
-            .ftpPassword,
+            kCFStreamPropertyFTPPassword,
             FTPConfig.password as CFString
         )
-        // 使用被动模式
+        // 被动模式
         CFWriteStreamSetProperty(
             writeStream,
-            .ftpUsePassiveMode,
+            kCFStreamPropertyFTPUsePassiveMode,
             kCFBooleanTrue
         )
 
@@ -149,7 +117,6 @@ final class FTPUploader {
 
         writeStream.open()
 
-        // 后台线程执行上传
         DispatchQueue.global(qos: .userInitiated).async {
             defer {
                 writeStream.close()
@@ -168,7 +135,7 @@ final class FTPUploader {
                 var offset = 0
                 while offset < bytesRead {
                     let bytesWritten = writeStream.write(
-                        &buffer[offset],
+                        buffer.advanced(by: offset),
                         maxLength: bytesRead - offset
                     )
                     if bytesWritten < 0 {
@@ -184,29 +151,26 @@ final class FTPUploader {
                     uploadedBytes += bytesWritten
                 }
 
-                // 进度回调
-                let progress = Double(uploadedBytes) / Double(totalBytes)
-                DispatchQueue.main.async {
-                    onProgress?(progress)
-                }
+                let progress = Double(uploadedBytes) / Double(max(totalBytes, 1))
+                DispatchQueue.main.async { onProgress?(progress) }
             }
 
-            // 检查写入流状态
             let status = writeStream.streamStatus
-            if status == .atEnd || status == .closed {
-                print("[FTPUploader] 上传完成")
-                self.deliverSuccess(onSuccess)
-            } else if let error = writeStream.streamError {
-                self.deliverFailure(onFailure, error: .uploadFailed(error.localizedDescription))
+            if status == .atEnd || status == .closed || status == .notOpen {
+                if let error = writeStream.streamError {
+                    self.deliverFailure(onFailure, error: .uploadFailed(error.localizedDescription))
+                } else {
+                    print("[FTPUploader] 上传完成")
+                    self.deliverSuccess(onSuccess)
+                }
             } else {
                 self.deliverSuccess(onSuccess)
             }
         }
     }
 
-    // MARK: - 上传 UIImage（便捷方法）
+    // MARK: - 上传 UIImage
 
-    /// 上传 UIImage 到 FTP 服务器
     func uploadImage(
         _ image: UIImage,
         onProgress: ((Double) -> Void)? = nil,
@@ -241,7 +205,8 @@ final class FTPUploader {
         }
     }
 
-    /// 上传视频文件到 FTP 服务器
+    // MARK: - 上传视频
+
     func uploadVideo(
         _ videoURL: URL,
         onProgress: ((Double) -> Void)? = nil,
@@ -258,15 +223,12 @@ final class FTPUploader {
 
     // MARK: - 工具方法
 
-    /// 构建远程路径
     private func buildRemotePath(fileName: String) -> String {
         var dir = FTPConfig.remoteDir
         if !dir.hasSuffix("/") { dir += "/" }
-        if dir.hasPrefix("/") { dir = String(dir.dropFirst()) }
-        return "ftp://\(FTPConfig.username):\(FTPConfig.password)@\(FTPConfig.host):\(FTPConfig.port)/\(dir)\(fileName)"
+        return "ftp://\(FTPConfig.host):\(FTPConfig.port)\(dir)\(fileName)"
     }
 
-    /// 主线程回调
     private func deliverSuccess(_ handler: @escaping () -> Void) {
         DispatchQueue.main.async { handler() }
     }
@@ -275,7 +237,6 @@ final class FTPUploader {
         DispatchQueue.main.async { handler(error) }
     }
 
-    /// 生成时间戳文件名
     private func timestampString() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss"

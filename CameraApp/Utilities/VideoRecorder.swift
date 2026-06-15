@@ -169,8 +169,8 @@ final class VideoRecorder: NSObject {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
         // 在原始帧上叠加水印
-        let watermarkedBuffer = renderWatermark(on: pixelBuffer, text: watermarkText)
-        videoInput.append(watermarkedBuffer, withPresentationTime: timestamp)
+        renderWatermark(on: pixelBuffer, text: watermarkText)
+        adaptor?.append(pixelBuffer, withPresentationTime: timestamp)
         videoFrameCount += 1
     }
 
@@ -215,8 +215,8 @@ final class VideoRecorder: NSObject {
     // MARK: - 水印渲染
 
     /// 在像素缓冲区上渲染水印文本
-    private func renderWatermark(on pixelBuffer: CVPixelBuffer, text: String) -> CVPixelBuffer {
-        guard !text.isEmpty else { return pixelBuffer }
+    private func renderWatermark(on pixelBuffer: CVPixelBuffer, text: String) {
+        guard !text.isEmpty else { return }
 
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
@@ -260,34 +260,32 @@ final class VideoRecorder: NSObject {
         rootLayer.frame = CGRect(origin: .zero, size: size)
         rootLayer.addSublayer(textLayer)
 
-        // 渲染图层到 CIImage
+        // 渲染水印图层
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
         guard let ctx = UIGraphicsGetCurrentContext() else {
             UIGraphicsEndImageContext()
-            return pixelBuffer
+            return
         }
         rootLayer.render(in: ctx)
-        guard let watermarkImage = UIGraphicsGetCurrentContext()?.makeImage() else {
+        guard let watermarkImage = ctx.makeImage() else {
             UIGraphicsEndImageContext()
-            return pixelBuffer
+            return
         }
         UIGraphicsEndImageContext()
 
         let watermarkCI = CIImage(cgImage: watermarkImage)
 
-        // 合成：原始图像 + 水印
+        // 合成：水印在上，原始图像在下
         let compositor = CIFilter(name: "CISourceOverCompositing")
         compositor?.setValue(watermarkCI, forKey: kCIInputImageKey)
         compositor?.setValue(ciImage, forKey: kCIInputBackgroundImageKey)
 
-        guard let outputImage = compositor?.outputImage else { return pixelBuffer }
+        guard let outputImage = compositor?.outputImage else { return }
 
         // 写回像素缓冲区
         CVPixelBufferLockBaseAddress(pixelBuffer, [])
         ciContext.render(outputImage, to: pixelBuffer)
         CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
-
-        return pixelBuffer
     }
 
     // MARK: - 工具方法
