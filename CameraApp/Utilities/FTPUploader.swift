@@ -103,17 +103,17 @@ final class FTPUploader {
 
             CFWriteStreamSetProperty(
                 writeStream,
-                kCFStreamPropertyFTPUserName.takeUnretainedValue(),
+                kCFStreamPropertyFTPUserName,
                 username
             )
             CFWriteStreamSetProperty(
                 writeStream,
-                kCFStreamPropertyFTPPassword.takeUnretainedValue(),
+                kCFStreamPropertyFTPPassword,
                 password
             )
             CFWriteStreamSetProperty(
                 writeStream,
-                kCFStreamPropertyFTPUsePassiveMode.takeUnretainedValue(),
+                kCFStreamPropertyFTPUsePassiveMode,
                 passiveMode
             )
 
