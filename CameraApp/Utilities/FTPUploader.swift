@@ -154,7 +154,7 @@ final class FTPUploader {
                     let written = CFWriteStreamWrite(
                         writeStream,
                         buffer.withUnsafeBufferPointer({ $0.baseAddress! + offset }),
-                        maxLength: remaining
+                        remaining
                     )
                     if written < 0 {
                         let error = CFWriteStreamCopyError(writeStream)
