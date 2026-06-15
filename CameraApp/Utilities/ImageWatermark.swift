@@ -63,7 +63,7 @@ struct ImageWatermark {
         // 文字属性
         let labelAttrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: fontSize, weight: .medium),
-            .foregroundColor: UIColor.white.opacity(0.8),
+            .foregroundColor: UIColor.white.withAlphaComponent(0.8),
             .strokeColor: UIColor.black,
             .strokeWidth: -strokeWidth * 0.5
         ]
