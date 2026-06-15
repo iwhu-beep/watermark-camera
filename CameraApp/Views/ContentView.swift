@@ -30,6 +30,7 @@ struct ContentView: View {
     @State private var showUploadResult: Bool = false
     @State private var uploadResultMessage: String = ""
     @State private var showNoteInput: Bool = false
+    @State private var recordingStartTime: Date? = nil
 
     // 实时定位数据
     @State private var currentLongitude: String = "---"
@@ -49,12 +50,20 @@ struct ContentView: View {
 
             VStack {
                 topToolBar
+
+                // 录像指示器
+                if camera.isRecording {
+                    recordingIndicator
+                        .transition(.opacity)
+                }
+
                 Spacer()
                 infoOverlay
                 modeSwitchBar
                 bottomControlBar
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: camera.isRecording)
         .navigationBarHidden(true)
         .statusBar(hidden: true)
         .onAppear {
@@ -65,7 +74,6 @@ struct ContentView: View {
                 camera.setupCamera()
                 camera.onPhotoCaptured = handleCapturedPhoto
                 camera.onVideoRecorded = handleVideoRecorded
-                // 设置动态水印提供者
                 camera.watermarkProvider = { [self] in
                     return buildWatermarkText()
                 }
@@ -98,24 +106,57 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - 录像指示器
+
+    private var recordingIndicator: some View {
+        TimelineView(.periodic(from: .now, by: 1.0)) { context in
+            let duration = recordingStartTime.map {
+                Int(context.date.timeIntervalSince($0))
+            } ?? 0
+            let minutes = duration / 60
+            let seconds = duration % 60
+            let timeStr = String(format: "%02d:%02d", minutes, seconds)
+
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 10, height: 10)
+                Text("REC \(timeStr)")
+                    .font(.system(size: 16, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color.black.opacity(0.6))
+            .cornerRadius(20)
+            .padding(.top, 8)
+        }
+    }
+
     // MARK: - 顶部工具栏
 
     private var topToolBar: some View {
         HStack {
+            // 设置
             Button(action: { showSettings = true }) {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
             }
+
             Spacer()
-            Button(action: {}) {
-                Image(systemName: "bolt.slash.fill")
+
+            // 闪光灯
+            Button(action: { camera.cycleFlashMode() }) {
+                Image(systemName: camera.flashMode.icon)
                     .font(.system(size: 20, weight: .medium))
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
             }
-            Button(action: {}) {
+
+            // 切换摄像头
+            Button(action: { camera.switchCamera() }) {
                 Image(systemName: "camera.rotate.fill")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundColor(.white)
@@ -127,14 +168,6 @@ struct ContentView: View {
             LinearGradient(colors: [.black.opacity(0.5), .clear], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea(edges: .top)
         )
-    }
-
-    // MARK: - 实时时间（使用TimelineView避免Timer导致全局刷新）
-
-    private func currentTimeString() -> String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return f.string(from: Date())
     }
 
     // MARK: - 信息叠加层
@@ -216,7 +249,7 @@ struct ContentView: View {
     private var bottomControlBar: some View {
         HStack {
             // 左：相册
-            Button(action: {}) {
+            Button(action: { openPhotoLibrary() }) {
                 VStack(spacing: 2) {
                     Image(systemName: "photo.on.rectangle")
                         .font(.system(size: 22))
@@ -240,13 +273,13 @@ struct ContentView: View {
 
             Spacer()
 
-            // 右：水印
-            Button(action: {}) {
+            // 右：水印（打开设置）
+            Button(action: { showSettings = true }) {
                 VStack(spacing: 2) {
                     Image(systemName: "text.bubble.fill")
                         .font(.system(size: 22))
                         .foregroundColor(.orange)
-                    Text("水印")
+                    Text("设置")
                         .font(.system(size: 10))
                         .foregroundColor(.white.opacity(0.8))
                 }
@@ -285,12 +318,10 @@ struct ContentView: View {
                     .strokeBorder(Color.white, lineWidth: 3)
                     .frame(width: 72, height: 72)
                 if camera.isRecording {
-                    // 停止：方块
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Color.red)
                         .frame(width: 28, height: 28)
                 } else {
-                    // 开始：红点
                     Circle()
                         .fill(camera.isReady ? Color.red : Color.gray)
                         .frame(width: 60, height: 60)
@@ -298,6 +329,15 @@ struct ContentView: View {
             }
         }
         .disabled(!camera.isReady)
+    }
+
+    // MARK: - 打开相册
+
+    private func openPhotoLibrary() {
+        // 打开系统照片 App
+        if let url = URL(string: "photos-redirect://") {
+            UIApplication.shared.open(url)
+        }
     }
 
     // MARK: - 拍照
@@ -312,8 +352,10 @@ struct ContentView: View {
 
     private func toggleRecording() {
         if camera.isRecording {
+            recordingStartTime = nil
             camera.stopRecording()
         } else {
+            recordingStartTime = Date()
             camera.startRecording()
         }
     }
@@ -344,7 +386,6 @@ struct ContentView: View {
             return
         }
 
-        // 生成坐标文本
         let coordinateText: String
         if case .success = LocationManager.shared.lastResult {
             coordinateText = LocationManager.shared.formatCoordinate(format: settings.coordinateFormat)
@@ -352,17 +393,14 @@ struct ContentView: View {
             coordinateText = "经度:\(currentLongitude) 纬度:\(currentLatitude)"
         }
 
-        // 绘制水印
         let watermarkedImage = ImageWatermark.draw(
             on: image,
             coordinate: coordinateText,
             note: noteText.isEmpty ? nil : noteText
         )
 
-        // 保存到相册
         savePhotoToLibrary(watermarkedImage)
 
-        // FTP 上传
         if settings.autoUpload && !settings.ftpHost.isEmpty {
             ftpUploadImage(watermarkedImage)
         }
@@ -376,11 +414,8 @@ struct ContentView: View {
             return
         }
         print("[ContentView] 视频已保存: \(url.lastPathComponent)")
-
-        // 保存到相册
         saveVideoToLibrary(url)
 
-        // FTP 上传
         if settings.autoUpload && !settings.ftpHost.isEmpty {
             ftpUploadVideo(url)
         }
@@ -393,7 +428,7 @@ struct ContentView: View {
         PHPhotoLibrary.shared().performChanges({
             PHAssetChangeRequest.creationRequestForAsset(from: image)
         }) { success, error in
-            print("[ContentView] 照片保存: \(success ? "成功" : "失败 - \(error?.localizedDescription ?? "")")")
+            print("[ContentView] 照片保存: \(success ? "成功" : "失败")")
         }
     }
 
@@ -402,7 +437,7 @@ struct ContentView: View {
         PHPhotoLibrary.shared().performChanges({
             PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
         }) { success, error in
-            print("[ContentView] 视频保存: \(success ? "成功" : "失败 - \(error?.localizedDescription ?? "")")")
+            print("[ContentView] 视频保存: \(success ? "成功" : "失败")")
         }
     }
 
@@ -450,7 +485,6 @@ struct ContentView: View {
         )
     }
 
-    /// 同步设置到 FTP 配置
     private func syncFTPConfig() {
         FTPConfig.host = settings.ftpHost
         FTPConfig.port = Int(settings.ftpPort) ?? 21
@@ -473,7 +507,6 @@ struct ContentView: View {
             currentLongitude = String(format: "%.6f", lon)
             currentLatitude = String(format: "%.6f", lat)
             currentAddress = "GPS定位"
-            // 成功后继续请求（保持更新）
             DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
                 LocationManager.shared.requestLocation { result in
                     handleLocationResult(result)

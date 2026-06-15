@@ -2,7 +2,7 @@
 //  CameraController.swift
 //  CameraApp
 //
-//  相机控制器：管理AVCaptureSession、拍照、录像
+//  相机控制器：管理AVCaptureSession、拍照、录像、摄像头切换、闪光灯
 //  路径: CameraApp/Controllers/CameraController.swift
 //
 
@@ -11,7 +11,6 @@ import UIKit
 
 // MARK: - 拍照代理
 
-/// AVCapturePhotoCaptureDelegate 实现
 private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
     var onComplete: ((UIImage?) -> Void)?
 
@@ -38,7 +37,6 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
 
 // MARK: - 视频数据代理
 
-/// AVCaptureVideoDataOutputSampleBufferDelegate + AVCaptureAudioDataOutputSampleBufferDelegate
 private class VideoDataDelegate: NSObject,
     AVCaptureVideoDataOutputSampleBufferDelegate,
     AVCaptureAudioDataOutputSampleBufferDelegate
@@ -58,27 +56,52 @@ private class VideoDataDelegate: NSObject,
     }
 }
 
+// MARK: - 闪光灯模式
+
+enum FlashMode: String {
+    case off = "关闭"
+    case on = "开启"
+    case auto = "自动"
+
+    var avFlashMode: AVCaptureDevice.FlashMode {
+        switch self {
+        case .off: return .off
+        case .on: return .on
+        case .auto: return .auto
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .off: return "bolt.slash.fill"
+        case .on: return "bolt.fill"
+        case .auto: return "bolt.badge.a.fill"
+        }
+    }
+
+    var next: FlashMode {
+        switch self {
+        case .auto: return .on
+        case .on: return .off
+        case .off: return .auto
+        }
+    }
+}
+
 // MARK: - 相机控制器
 
-/// 相机控制器：拍照 + 录像
 class CameraController: ObservableObject {
 
     // MARK: 公开属性
 
-    /// 相机会话
     let session = AVCaptureSession()
-
-    /// 拍照完成回调
     var onPhotoCaptured: ((UIImage?) -> Void)?
-
-    /// 录像完成回调（返回视频文件URL）
     var onVideoRecorded: ((URL?) -> Void)?
 
-    /// 相机是否已就绪
     @Published var isReady: Bool = false
-
-    /// 是否正在录像
     @Published var isRecording: Bool = false
+    @Published var flashMode: FlashMode = .auto
+    @Published var currentCameraPosition: AVCaptureDevice.Position = .back
 
     // MARK: 私有属性
 
@@ -90,11 +113,13 @@ class CameraController: ObservableObject {
     private let videoQueue = DispatchQueue(label: "com.cameraapp.video")
     private let audioQueue = DispatchQueue(label: "com.cameraapp.audio")
 
+    private var currentVideoInput: AVCaptureDeviceInput?
+    private var currentAudioInput: AVCaptureDeviceInput?
+
     private var currentPhotoDelegate: PhotoCaptureDelegate?
     private let videoDelegate = VideoDataDelegate()
     private let videoRecorder = VideoRecorder()
 
-    /// 动态水印文本提供者
     var watermarkProvider: (() -> String)?
 
     // MARK: - 初始化相机
@@ -107,31 +132,18 @@ class CameraController: ObservableObject {
             self.session.beginConfiguration()
             self.session.sessionPreset = .high
 
-            // 1. 视频输入
-            guard let videoDevice = AVCaptureDevice.default(
-                .builtInWideAngleCamera, for: .video, position: .back
-            ),
-            let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
-            self.session.canAddInput(videoInput) else {
-                print("[Camera] 无法添加视频输入")
-                self.session.commitConfiguration()
-                return
-            }
-            self.session.addInput(videoInput)
+            // 1. 视频输入（默认后置）
+            self.addVideoInput(position: .back)
 
             // 2. 音频输入
-            if let audioDevice = AVCaptureDevice.default(for: .audio),
-               let audioInput = try? AVCaptureDeviceInput(device: audioDevice),
-               self.session.canAddInput(audioInput) {
-                self.session.addInput(audioInput)
-            }
+            self.addAudioInput()
 
             // 3. 照片输出
             if self.session.canAddOutput(self.photoOutput) {
                 self.session.addOutput(self.photoOutput)
             }
 
-            // 4. 视频数据输出（用于录像）
+            // 4. 视频数据输出
             if self.session.canAddOutput(self.videoOutput) {
                 self.session.addOutput(self.videoOutput)
                 self.videoOutput.videoSettings = [
@@ -157,7 +169,6 @@ class CameraController: ObservableObject {
                 print("[Camera] 相机已就绪")
             }
 
-            // 关联录制器
             self.videoDelegate.recorder = self.videoRecorder
         }
     }
@@ -171,6 +182,51 @@ class CameraController: ObservableObject {
         }
     }
 
+    // MARK: - 切换摄像头
+
+    func switchCamera() {
+        sessionQueue.async { [weak self] in
+            guard let self = self else { return }
+            guard !self.isRecording else {
+                print("[Camera] 录像中不能切换摄像头")
+                return
+            }
+
+            let newPosition: AVCaptureDevice.Position =
+                self.currentCameraPosition == .back ? .front : .back
+
+            self.session.beginConfiguration()
+
+            // 移除旧的视频输入
+            if let oldInput = self.currentVideoInput {
+                self.session.removeInput(oldInput)
+            }
+
+            // 添加新的视频输入
+            if self.addVideoInputInternal(position: newPosition) {
+                self.currentCameraPosition = newPosition
+                print("[Camera] 切换到\((newPosition == .back ? "后置" : "前置"))摄像头")
+            } else {
+                // 切换失败，恢复旧的
+                self.addVideoInputInternal(position: self.currentCameraPosition)
+                print("[Camera] 切换摄像头失败")
+            }
+
+            self.session.commitConfiguration()
+
+            DispatchQueue.main.async {
+                self.objectWillChange.send()
+            }
+        }
+    }
+
+    // MARK: - 切换闪光灯
+
+    func cycleFlashMode() {
+        flashMode = flashMode.next
+        print("[Camera] 闪光灯: \(flashMode.rawValue)")
+    }
+
     // MARK: - 拍照
 
     func capturePhoto() {
@@ -181,7 +237,7 @@ class CameraController: ObservableObject {
         }
 
         let settings = AVCapturePhotoSettings()
-        settings.flashMode = .auto
+        settings.flashMode = flashMode.avFlashMode
 
         let delegate = PhotoCaptureDelegate()
         delegate.onComplete = { [weak self] image in
@@ -227,13 +283,33 @@ class CameraController: ObservableObject {
         }
     }
 
-    // MARK: - 获取视频尺寸
+    // MARK: - 内部方法
 
-    /// 获取当前视频输出尺寸
-    func videoSize() -> CGSize {
-        let settings = videoOutput.recommendedVideoSettingsForAssetWriter(writingTo: .mp4)
-        let w = settings?[AVVideoWidthKey] as? Int ?? 1920
-        let h = settings?[AVVideoHeightKey] as? Int ?? 1080
-        return CGSize(width: w, height: h)
+    private func addVideoInput(position: AVCaptureDevice.Position) {
+        guard addVideoInputInternal(position: position) else {
+            print("[Camera] 无法添加视频输入")
+            return
+        }
+    }
+
+    private func addVideoInputInternal(position: AVCaptureDevice.Position) -> Bool {
+        guard let device = AVCaptureDevice.default(
+            .builtInWideAngleCamera, for: .video, position: position
+        ) else { return false }
+
+        guard let input = try? AVCaptureDeviceInput(device: device) else { return false }
+        guard session.canAddInput(input) else { return false }
+
+        session.addInput(input)
+        currentVideoInput = input
+        return true
+    }
+
+    private func addAudioInput() {
+        guard let device = AVCaptureDevice.default(for: .audio),
+              let input = try? AVCaptureDeviceInput(device: device),
+              session.canAddInput(input) else { return }
+        session.addInput(input)
+        currentAudioInput = input
     }
 }
