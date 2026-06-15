@@ -2,7 +2,7 @@
 //  SettingsView.swift
 //  CameraApp
 //
-//  设置页：FTP上传配置、坐标格式、水印设置
+//  设置页：上传配置、坐标格式、水印设置
 //  路径: CameraApp/Views/SettingsView.swift
 //
 
@@ -15,60 +15,123 @@ struct SettingsView: View {
 
     @State private var ftpTestResult: String?
     @State private var isTestingFTP: Bool = false
+    @State private var showBaiduAuth: Bool = false
+    @State private var baiduLoginStatus: String = ""
 
     var body: some View {
         NavigationView {
             Form {
-                // ========== FTP 上传设置 ==========
+                // ========== 上传目标 ==========
                 Section {
-                    Toggle("自动上传到 FTP", isOn: $settings.autoUpload)
-
-                    TextField("服务器地址 (如 ftp.example.com)", text: $settings.ftpHost)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                        .font(.system(size: 14))
-
-                    TextField("端口 (默认21)", text: $settings.ftpPort)
-                        .keyboardType(.numberPad)
-                        .font(.system(size: 14))
-
-                    TextField("用户名", text: $settings.ftpUsername)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                        .font(.system(size: 14))
-
-                    SecureField("密码", text: $settings.ftpPassword)
-                        .font(.system(size: 14))
-
-                    TextField("远程目录 (如 /photos/)", text: $settings.ftpRemoteDir)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                        .font(.system(size: 14))
-
-                    // 测试连接按钮
-                    Button(action: testFTPConnection) {
-                        HStack {
-                            if isTestingFTP {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                            }
-                            Text(isTestingFTP ? "测试中..." : "测试连接")
-                                .foregroundColor(.blue)
+                    Picker("上传目标", selection: $settings.uploadTarget) {
+                        ForEach(UploadTarget.allCases) { target in
+                            Text(target.rawValue).tag(target)
                         }
                     }
-                    .disabled(isTestingFTP || settings.ftpHost.isEmpty)
+                    .pickerStyle(.segmented)
 
-                    if let result = ftpTestResult {
-                        Text(result)
-                            .font(.caption)
-                            .foregroundColor(result.contains("成功") ? .green : .red)
-                    }
+                    Toggle("自动上传", isOn: $settings.autoUpload)
                 } header: {
-                    Text("FTP 上传")
+                    Text("上传设置")
                 } footer: {
-                    Text("配置 FTP 服务器信息，拍照/录像后自动上传文件")
+                    Text("拍照/录像后自动上传到选定的目标")
                         .font(.caption2)
                         .foregroundColor(.secondary)
+                }
+
+                // ========== FTP 配置 ==========
+                if settings.uploadTarget == .ftp {
+                    Section {
+                        TextField("服务器地址 (如 ftp.example.com)", text: $settings.ftpHost)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .font(.system(size: 14))
+
+                        TextField("端口 (默认21)", text: $settings.ftpPort)
+                            .keyboardType(.numberPad)
+                            .font(.system(size: 14))
+
+                        TextField("用户名", text: $settings.ftpUsername)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .font(.system(size: 14))
+
+                        SecureField("密码", text: $settings.ftpPassword)
+                            .font(.system(size: 14))
+
+                        TextField("远程目录 (如 /photos/)", text: $settings.ftpRemoteDir)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .font(.system(size: 14))
+
+                        Button(action: testFTPConnection) {
+                            HStack {
+                                if isTestingFTP {
+                                    ProgressView().scaleEffect(0.8)
+                                }
+                                Text(isTestingFTP ? "测试中..." : "测试连接")
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        .disabled(isTestingFTP || settings.ftpHost.isEmpty)
+
+                        if let result = ftpTestResult {
+                            Text(result)
+                                .font(.caption)
+                                .foregroundColor(result.contains("成功") ? .green : .red)
+                        }
+                    } header: {
+                        Text("FTP 配置")
+                    }
+                }
+
+                // ========== 百度网盘配置 ==========
+                if settings.uploadTarget == .baidu {
+                    Section {
+                        if BaiduUploader.shared.isLoggedIn() {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("已登录百度网盘")
+                                    .foregroundColor(.green)
+                            }
+
+                            Button(action: {
+                                BaiduUploader.shared.logout()
+                                baiduLoginStatus = "已退出登录"
+                            }) {
+                                Text("退出登录")
+                                    .foregroundColor(.red)
+                            }
+                        } else {
+                            HStack {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
+                                Text("未登录")
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Button(action: { showBaiduAuth = true }) {
+                                HStack {
+                                    Image(systemName: "person.circle")
+                                    Text("登录百度网盘")
+                                }
+                                .foregroundColor(.blue)
+                            }
+                        }
+
+                        if !baiduLoginStatus.isEmpty {
+                            Text(baiduLoginStatus)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } header: {
+                        Text("百度网盘")
+                    } footer: {
+                        Text("文件将上传到网盘的 /apps/拍照/ 目录")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
 
                 // ========== 坐标格式 ==========
@@ -147,6 +210,11 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
+                }
+            }
+            .sheet(isPresented: $showBaiduAuth) {
+                BaiduAuthView { success, message in
+                    baiduLoginStatus = message
                 }
             }
         }

@@ -412,8 +412,8 @@ struct ContentView: View {
 
         savePhotoToLibrary(watermarkedImage)
 
-        if settings.autoUpload && !settings.ftpHost.isEmpty {
-            ftpUploadImage(watermarkedImage)
+        if settings.autoUpload {
+            uploadImage(watermarkedImage)
         }
     }
 
@@ -427,8 +427,8 @@ struct ContentView: View {
         print("[ContentView] 视频已保存: \(url.lastPathComponent)")
         saveVideoToLibrary(url)
 
-        if settings.autoUpload && !settings.ftpHost.isEmpty {
-            ftpUploadVideo(url)
+        if settings.autoUpload {
+            uploadVideo(url)
         }
     }
 
@@ -460,6 +460,26 @@ struct ContentView: View {
             status = PHPhotoLibrary.authorizationStatus()
         }
         return status == .authorized || status == .limited
+    }
+
+    // MARK: - 上传（根据目标选择 FTP 或百度网盘）
+
+    private func uploadImage(_ image: UIImage) {
+        switch settings.uploadTarget {
+        case .ftp:
+            ftpUploadImage(image)
+        case .baidu:
+            baiduUploadImage(image)
+        }
+    }
+
+    private func uploadVideo(_ url: URL) {
+        switch settings.uploadTarget {
+        case .ftp:
+            ftpUploadVideo(url)
+        case .baidu:
+            baiduUploadVideo(url)
+        }
     }
 
     // MARK: - FTP 上传
@@ -502,6 +522,38 @@ struct ContentView: View {
         FTPConfig.username = settings.ftpUsername
         FTPConfig.password = settings.ftpPassword
         FTPConfig.remoteDir = settings.ftpRemoteDir
+    }
+
+    // MARK: - 百度网盘上传
+
+    private func baiduUploadImage(_ image: UIImage) {
+        BaiduUploader.shared.uploadImage(
+            image,
+            onProgress: { progress in print("[Baidu] 上传: \(Int(progress * 100))%") },
+            onSuccess: {
+                uploadResultMessage = "已上传到百度网盘"
+                showUploadResult = true
+            },
+            onFailure: { error in
+                uploadResultMessage = "上传失败: \(error.localizedDescription)"
+                showUploadResult = true
+            }
+        )
+    }
+
+    private func baiduUploadVideo(_ url: URL) {
+        BaiduUploader.shared.uploadVideo(
+            url,
+            onProgress: { progress in print("[Baidu] 上传: \(Int(progress * 100))%") },
+            onSuccess: {
+                uploadResultMessage = "视频已上传到百度网盘"
+                showUploadResult = true
+            },
+            onFailure: { error in
+                uploadResultMessage = "上传失败: \(error.localizedDescription)"
+                showUploadResult = true
+            }
+        )
     }
 
     // MARK: - 定位更新

@@ -29,6 +29,16 @@ enum CameraMode: String, CaseIterable {
     case video = "录像"
 }
 
+// MARK: - 上传目标
+
+/// 文件上传目标
+enum UploadTarget: String, CaseIterable, Identifiable {
+    case ftp = "FTP"
+    case baidu = "百度网盘"
+
+    var id: String { rawValue }
+}
+
 // MARK: - 应用设置（持久化存储）
 
 /// 全局设置模型，所有设置自动保存到UserDefaults
@@ -62,6 +72,12 @@ class AppSettings: ObservableObject {
         didSet { defaults.set(ftpRemoteDir, forKey: "ftpRemoteDir") }
     }
 
+    // MARK: 上传目标
+
+    @Published var uploadTarget: UploadTarget {
+        didSet { defaults.set(uploadTarget.rawValue, forKey: "uploadTarget") }
+    }
+
     // MARK: 坐标格式
 
     @Published var coordinateFormat: CoordinateFormat {
@@ -88,6 +104,14 @@ class AppSettings: ObservableObject {
         self.ftpUsername = defaults.string(forKey: "ftpUsername") ?? ""
         self.ftpPassword = defaults.string(forKey: "ftpPassword") ?? ""
         self.ftpRemoteDir = defaults.string(forKey: "ftpRemoteDir") ?? "/"
+
+        // 上传目标
+        if let targetRaw = defaults.string(forKey: "uploadTarget"),
+           let target = UploadTarget(rawValue: targetRaw) {
+            self.uploadTarget = target
+        } else {
+            self.uploadTarget = .ftp
+        }
 
         // 坐标格式
         if let formatRaw = defaults.string(forKey: "coordinateFormat"),
