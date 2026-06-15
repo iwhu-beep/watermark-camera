@@ -2,129 +2,158 @@
 //  ImageWatermark.swift
 //  CameraApp
 //
-//  独立水印绘制工具类：输入UIImage+经纬度+备注，输出水印新图
+//  独立水印绘制工具类：在图片左下角绘制信息面板
 //  路径: CameraApp/Utilities/ImageWatermark.swift
 //
 
 import UIKit
 
-/// 独立图片水印工具类，无外部依赖，可直接调用
+/// 独立图片水印工具类
+/// 在图片左下角绘制半透明信息面板，显示经纬度、坐标、地址、时间、备注
 struct ImageWatermark {
 
     // MARK: - 常量
 
-    /// 基准设计宽度（以1000px为参考，所有尺寸按此缩放）
+    /// 基准设计宽度（以1000px为参考）
     private static let referenceWidth: CGFloat = 1000
 
-    /// 基准字体大小（在1000px宽图片上的字号）
-    private static let baseFontSize: CGFloat = 28
+    /// 基准边距（距图片边缘）
+    private static let baseMargin: CGFloat = 24
 
-    /// 基准边距（在1000px宽图片上距边缘20pt）
-    private static let baseMargin: CGFloat = 20
+    /// 基准内边距（面板内部）
+    private static let basePadding: CGFloat = 16
 
-    /// 基准描边宽度（在1000px宽图片上1pt黑色描边）
-    private static let baseStrokeWidth: CGFloat = 1.5
+    /// 基准圆角
+    private static let baseCornerRadius: CGFloat = 10
 
-    /// 行间距倍数（相对字体大小）
-    private static let lineSpacingRatio: CGFloat = 0.35
+    /// 行间距
+    private static let baseLineSpacing: CGFloat = 6
 
     // MARK: - 公开接口
 
-    /// 在图片上绘制水印，返回新UIImage（不修改原图）
+    /// 在图片左下角绘制信息面板水印
     ///
     /// - Parameters:
     ///   - image: 原始照片
-    ///   - coordinate: 经纬度文本
-    ///   - note: 备注文本，为空则只绘制坐标和时间
-    ///   - fontSizeScale: 字号缩放倍数（1.0为基准大小，2.0为两倍大）
+    ///   - lines: 水印文本行数组，如 ["经度: 116.407", "纬度: 39.904", ...]
+    ///   - fontSizeScale: 字号缩放倍数
     ///   - verticalPosition: 垂直位置（0=底部, 0.5=居中, 1=顶部）
     /// - Returns: 添加水印后的新UIImage
     static func draw(
         on image: UIImage,
-        coordinate: String,
-        note: String? = nil,
+        lines: [String],
         fontSizeScale: CGFloat = 1.0,
-        verticalPosition: Double = 0.15
+        verticalPosition: Double = 0.0
     ) -> UIImage {
+
+        guard !lines.isEmpty else { return image }
 
         let imgWidth = image.size.width
         let imgHeight = image.size.height
-
-        // 按图片宽度相对参考宽度计算缩放因子
         let scale = imgWidth / referenceWidth
 
-        // 缩放后实际尺寸（再乘以用户设置的字号倍数）
-        let fontSize = baseFontSize * scale * fontSizeScale
+        // 计算各尺寸
+        let fontSize = 28 * scale * fontSizeScale
         let margin = baseMargin * scale
-        let strokeWidth = baseStrokeWidth * scale
-        let lineSpacing = fontSize * lineSpacingRatio
+        let padding = basePadding * scale
+        let cornerRadius = baseCornerRadius * scale
+        let lineSpacing = baseLineSpacing * scale
+        let strokeWidth = 1.5 * scale
 
-        // 文字属性：白色填充 + 黑色描边
-        let textAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.boldSystemFont(ofSize: fontSize),
+        // 文字属性
+        let labelAttrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: fontSize, weight: .medium),
+            .foregroundColor: UIColor.white.opacity(0.8),
+            .strokeColor: UIColor.black,
+            .strokeWidth: -strokeWidth * 0.5
+        ]
+        let valueAttrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: fontSize, weight: .medium),
             .foregroundColor: UIColor.white,
             .strokeColor: UIColor.black,
-            .strokeWidth: -strokeWidth
+            .strokeWidth: -strokeWidth * 0.5
         ]
-
-        // 生成日期时间文本
-        let dateTimeText = formatDateTime()
 
         let renderer = UIGraphicsImageRenderer(size: image.size)
         return renderer.image { _ in
-
-            // 绘制原始照片
             image.draw(at: .zero)
 
-            // 计算水印总高度
+            // 计算每行尺寸
+            var lineSizes: [(label: CGSize, value: CGSize, full: CGSize)] = []
+            var maxWidth: CGFloat = 0
             var totalHeight: CGFloat = 0
-            let line1Size = coordinate.size(withAttributes: textAttributes)
-            totalHeight += line1Size.height
-            let line2Size = dateTimeText.size(withAttributes: textAttributes)
-            totalHeight += line2Size.height + lineSpacing
-            if let note = note, !note.isEmpty {
-                let noteSize = note.size(withAttributes: textAttributes)
-                totalHeight += noteSize.height + lineSpacing
+
+            for (i, line) in lines.enumerated() {
+                // 拆分标签和值
+                let parts = splitLabelValue(line)
+                let labelSize = parts.label.size(withAttributes: labelAttrs)
+                let valueSize = parts.value.size(withAttributes: valueAttrs)
+                let fullSize = line.size(withAttributes: valueAttrs)
+                lineSizes.append((labelSize, valueSize, fullSize))
+                maxWidth = max(maxWidth, fullSize.width)
+                totalHeight += fullSize.height
+                if i < lines.count - 1 {
+                    totalHeight += lineSpacing
+                }
             }
 
-            // 根据 verticalPosition 计算起始Y坐标
-            // 0 = 底部（margin上方），0.5 = 居中，1 = 顶部
-            let availableSpace = imgHeight - margin * 2 - totalHeight
-            let startY = margin + availableSpace * CGFloat(1.0 - verticalPosition)
+            // 面板尺寸
+            let panelWidth = maxWidth + padding * 2
+            let panelHeight = totalHeight + padding * 2
 
-            var currentY = startY
+            // 面板位置（左下角）
+            let panelX = margin
+            let availableY = imgHeight - margin * 2 - panelHeight
+            let panelY = margin + availableY * CGFloat(1.0 - verticalPosition)
 
-            // 第一行（顶部）：备注
-            if let note = note, !note.isEmpty {
-                note.draw(
-                    at: CGPoint(x: margin, y: currentY),
-                    withAttributes: textAttributes
+            // 绘制半透明背景面板
+            let panelRect = CGRect(x: panelX, y: panelY, width: panelWidth, height: panelHeight)
+            let bgPath = UIBezierPath(roundedRect: panelRect, cornerRadius: cornerRadius)
+            UIColor.black.withAlphaComponent(0.55).setFill()
+            bgPath.fill()
+
+            // 绘制文字行
+            var currentY = panelY + padding
+
+            for (i, line) in lines.enumerated() {
+                let parts = splitLabelValue(line)
+                var currentX = panelX + padding
+
+                // 绘制标签部分
+                parts.label.draw(
+                    at: CGPoint(x: currentX, y: currentY),
+                    withAttributes: labelAttrs
                 )
-                currentY += note.size(withAttributes: textAttributes).height + lineSpacing
+                currentX += lineSizes[i].label.width
+
+                // 绘制值部分
+                parts.value.draw(
+                    at: CGPoint(x: currentX, y: currentY),
+                    withAttributes: valueAttrs
+                )
+
+                currentY += lineSizes[i].full.height
+                if i < lines.count - 1 {
+                    currentY += lineSpacing
+                }
             }
-
-            // 第二行：日期时间
-            dateTimeText.draw(
-                at: CGPoint(x: margin, y: currentY),
-                withAttributes: textAttributes
-            )
-            currentY += line2Size.height + lineSpacing
-
-            // 第三行（底部）：经纬度坐标
-            coordinate.draw(
-                at: CGPoint(x: margin, y: currentY),
-                withAttributes: textAttributes
-            )
         }
     }
 
     // MARK: - 私有工具
 
-    /// 格式化当前日期时间
-    private static func formatDateTime() -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "yyyy年MM月dd日 HH:mm:ss"
-        return formatter.string(from: Date())
+    /// 拆分 "标签：值" 格式文本
+    private static func splitLabelValue(_ text: String) -> (label: String, value: String) {
+        // 支持中文冒号和英文冒号
+        if let range = text.range(of: "：") {
+            let label = String(text[..<range.upperBound])
+            let value = String(text[range.upperBound...])
+            return (label, value)
+        } else if let range = text.range(of: ":") {
+            let label = String(text[..<range.upperBound])
+            let value = String(text[range.upperBound...])
+            return (label, value)
+        }
+        return ("", text)
     }
 }

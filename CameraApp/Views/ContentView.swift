@@ -367,19 +367,25 @@ struct ContentView: View {
 
     // MARK: - 构建水印文本
 
-    private func buildWatermarkText() -> String {
+    /// 构建水印行数组（与界面信息叠加层一致）
+    private func buildWatermarkLines() -> [String] {
         var lines: [String] = []
-        lines.append("经度: \(currentLongitude)")
-        lines.append("纬度: \(currentLatitude)")
-        lines.append("坐标: WGS84 坐标系")
-        lines.append("地址: \(currentAddress)")
+        lines.append("经度：\(currentLongitude)")
+        lines.append("纬度：\(currentLatitude)")
+        lines.append("坐标：WGS84 坐标系")
+        lines.append("地址：\(currentAddress)")
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        lines.append("时间: \(f.string(from: Date()))")
+        lines.append("时间：\(f.string(from: Date()))")
         if !noteText.isEmpty {
-            lines.append("备注: \(noteText)")
+            lines.append("备注：\(noteText)")
         }
-        return lines.joined(separator: "\n")
+        return lines
+    }
+
+    /// 构建水印文本（多行字符串，用于录像）
+    private func buildWatermarkText() -> String {
+        return buildWatermarkLines().joined(separator: "\n")
     }
 
     // MARK: - 拍照完成回调
@@ -391,20 +397,15 @@ struct ContentView: View {
             return
         }
 
-        let coordinateText: String
-        if case .success = LocationManager.shared.lastResult {
-            coordinateText = LocationManager.shared.formatCoordinate(format: settings.coordinateFormat)
-        } else {
-            coordinateText = "经度:\(currentLongitude) 纬度:\(currentLatitude)"
-        }
+        // 构建水印行（与界面信息叠加层一致）
+        let watermarkLines = buildWatermarkLines()
 
         // 计算字号缩放倍数（设置值 / 基准值24）
         let fontSizeScale = settings.watermarkFontSize / 24.0
 
         let watermarkedImage = ImageWatermark.draw(
             on: image,
-            coordinate: coordinateText,
-            note: noteText.isEmpty ? nil : noteText,
+            lines: watermarkLines,
             fontSizeScale: fontSizeScale,
             verticalPosition: settings.watermarkVerticalPosition
         )
