@@ -2,11 +2,12 @@
 //  AppSettings.swift
 //  CameraApp
 //
-//  应用设置数据模型
+//  应用设置数据模型（持久化到UserDefaults）
 //  路径: CameraApp/Models/AppSettings.swift
 //
 
 import Foundation
+import SwiftUI
 
 // MARK: - 坐标格式枚举
 
@@ -28,41 +29,77 @@ enum CameraMode: String, CaseIterable {
     case video = "录像"
 }
 
-// MARK: - 应用设置
+// MARK: - 应用设置（持久化存储）
 
-/// 全局设置模型，ObservableObject驱动UI刷新
+/// 全局设置模型，所有设置自动保存到UserDefaults
 class AppSettings: ObservableObject {
+
+    private let defaults = UserDefaults.standard
 
     // MARK: FTP上传
 
-    /// 是否开启自动上传
-    @Published var autoUpload: Bool = false
+    @Published var autoUpload: Bool {
+        didSet { defaults.set(autoUpload, forKey: "autoUpload") }
+    }
 
-    /// FTP 服务器地址（如 ftp.example.com）
-    @Published var ftpHost: String = ""
+    @Published var ftpHost: String {
+        didSet { defaults.set(ftpHost, forKey: "ftpHost") }
+    }
 
-    /// FTP 端口（默认21）
-    @Published var ftpPort: String = "21"
+    @Published var ftpPort: String {
+        didSet { defaults.set(ftpPort, forKey: "ftpPort") }
+    }
 
-    /// FTP 用户名
-    @Published var ftpUsername: String = ""
+    @Published var ftpUsername: String {
+        didSet { defaults.set(ftpUsername, forKey: "ftpUsername") }
+    }
 
-    /// FTP 密码
-    @Published var ftpPassword: String = ""
+    @Published var ftpPassword: String {
+        didSet { defaults.set(ftpPassword, forKey: "ftpPassword") }
+    }
 
-    /// FTP 远程目录（如 /photos/camera/）
-    @Published var ftpRemoteDir: String = "/"
+    @Published var ftpRemoteDir: String {
+        didSet { defaults.set(ftpRemoteDir, forKey: "ftpRemoteDir") }
+    }
 
     // MARK: 坐标格式
 
-    /// 坐标显示格式
-    @Published var coordinateFormat: CoordinateFormat = .decimal
+    @Published var coordinateFormat: CoordinateFormat {
+        didSet { defaults.set(coordinateFormat.rawValue, forKey: "coordinateFormat") }
+    }
 
     // MARK: 水印设置
 
-    /// 水印基准字体大小（实际绘制时会按图片宽度缩放）
-    @Published var watermarkFontSize: CGFloat = 24
+    @Published var watermarkFontSize: CGFloat {
+        didSet { defaults.set(Double(watermarkFontSize), forKey: "watermarkFontSize") }
+    }
 
-    /// 水印垂直位置（0=底部, 0.5=居中, 1=顶部）
-    @Published var watermarkVerticalPosition: Double = 0.15
+    @Published var watermarkVerticalPosition: Double {
+        didSet { defaults.set(watermarkVerticalPosition, forKey: "watermarkVerticalPosition") }
+    }
+
+    // MARK: - 初始化（从UserDefaults读取已保存的设置）
+
+    init() {
+        // FTP 设置
+        self.autoUpload = defaults.bool(forKey: "autoUpload")
+        self.ftpHost = defaults.string(forKey: "ftpHost") ?? ""
+        self.ftpPort = defaults.string(forKey: "ftpPort") ?? "21"
+        self.ftpUsername = defaults.string(forKey: "ftpUsername") ?? ""
+        self.ftpPassword = defaults.string(forKey: "ftpPassword") ?? ""
+        self.ftpRemoteDir = defaults.string(forKey: "ftpRemoteDir") ?? "/"
+
+        // 坐标格式
+        if let formatRaw = defaults.string(forKey: "coordinateFormat"),
+           let format = CoordinateFormat(rawValue: formatRaw) {
+            self.coordinateFormat = format
+        } else {
+            self.coordinateFormat = .decimal
+        }
+
+        // 水印设置
+        let fontSize = defaults.double(forKey: "watermarkFontSize")
+        self.watermarkFontSize = fontSize > 0 ? CGFloat(fontSize) : 24
+        self.watermarkVerticalPosition = defaults.object(forKey: "watermarkVerticalPosition") as? Double ?? 0.15
+    }
 }
