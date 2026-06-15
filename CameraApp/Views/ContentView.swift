@@ -74,6 +74,8 @@ struct ContentView: View {
                 camera.setupCamera()
                 camera.onPhotoCaptured = handleCapturedPhoto
                 camera.onVideoRecorded = handleVideoRecorded
+                camera.watermarkFontSizeScale = settings.watermarkFontSize / 24.0
+                camera.watermarkVerticalPosition = settings.watermarkVerticalPosition
                 camera.watermarkProvider = { [self] in
                     return buildWatermarkText()
                 }
@@ -356,6 +358,9 @@ struct ContentView: View {
             camera.stopRecording()
         } else {
             recordingStartTime = Date()
+            // 同步水印设置
+            camera.watermarkFontSizeScale = settings.watermarkFontSize / 24.0
+            camera.watermarkVerticalPosition = settings.watermarkVerticalPosition
             camera.startRecording()
         }
     }
@@ -393,10 +398,15 @@ struct ContentView: View {
             coordinateText = "经度:\(currentLongitude) 纬度:\(currentLatitude)"
         }
 
+        // 计算字号缩放倍数（设置值 / 基准值24）
+        let fontSizeScale = settings.watermarkFontSize / 24.0
+
         let watermarkedImage = ImageWatermark.draw(
             on: image,
             coordinate: coordinateText,
-            note: noteText.isEmpty ? nil : noteText
+            note: noteText.isEmpty ? nil : noteText,
+            fontSizeScale: fontSizeScale,
+            verticalPosition: settings.watermarkVerticalPosition
         )
 
         savePhotoToLibrary(watermarkedImage)

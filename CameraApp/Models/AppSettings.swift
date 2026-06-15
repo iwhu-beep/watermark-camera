@@ -61,5 +61,8 @@ class AppSettings: ObservableObject {
     // MARK: 水印设置
 
     /// 水印基准字体大小（实际绘制时会按图片宽度缩放）
-    @Published var watermarkFontSize: CGFloat = 20
+    @Published var watermarkFontSize: CGFloat = 24
+
+    /// 水印垂直位置（0=底部, 0.5=居中, 1=顶部）
+    @Published var watermarkVerticalPosition: Double = 0.15
 }

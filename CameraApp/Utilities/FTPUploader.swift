@@ -2,7 +2,7 @@
 //  FTPUploader.swift
 //  CameraApp
 //
-//  FTP 文件上传工具类，使用 URLSession
+//  FTP 文件上传工具类
 //  路径: CameraApp/Utilities/FTPUploader.swift
 //
 
@@ -47,10 +47,11 @@ final class FTPUploader: NSObject {
 
     static let shared = FTPUploader()
 
-    private var session: URLSession?
+    private var currentSession: URLSession?
     private var successHandler: (() -> Void)?
     private var failureHandler: ((FTPUploadError) -> Void)?
     private var progressHandler: ((Double) -> Void)?
+    private var currentData = Data()
 
     private override init() {
         super.init()
@@ -74,38 +75,45 @@ final class FTPUploader: NSObject {
             return
         }
 
-        let fileName = localURL.lastPathComponent
-        var dir = FTPConfig.remoteDir
-        if !dir.hasSuffix("/") { dir += "/" }
-
-        // 构建 FTP URL（URLSession 支持 ftp:// 协议）
-        var components = URLComponents()
-        components.scheme = "ftp"
-        components.host = FTPConfig.host
-        components.port = FTPConfig.port
-        components.path = "\(dir)\(fileName)"
-        components.user = FTPConfig.username
-        components.password = FTPConfig.password
-
-        guard let ftpURL = components.url else {
-            DispatchQueue.main.async { onFailure(.uploadFailed("无效的 FTP URL")) }
+        guard let fileData = try? Data(contentsOf: localURL) else {
+            DispatchQueue.main.async { onFailure(.fileReadFailed) }
             return
         }
 
-        print("[FTPUploader] 上传到: \(ftpURL.absoluteString.replacingOccurrences(of: FTPConfig.password, with: "***"))")
+        let fileName = localURL.lastPathComponent
+        var dir = FTPConfig.remoteDir
+        if !dir.hasPrefix("/") { dir = "/" + dir }
+        if !dir.hasSuffix("/") { dir += "/" }
+
+        // 直接拼接 FTP URL
+        let ftpURLString = "ftp://\(FTPConfig.username):\(FTPConfig.password)@\(FTPConfig.host):\(FTPConfig.port)\(dir)\(fileName)"
+
+        print("[FTPUploader] 目标: ftp://\(FTPConfig.username):***@\(FTPConfig.host):\(FTPConfig.port)\(dir)\(fileName)")
+        print("[FTPUploader] 文件大小: \(fileData.count) bytes")
+
+        guard let ftpURL = URL(string: ftpURLString) else {
+            DispatchQueue.main.async { onFailure(.uploadFailed("无效的 FTP URL，请检查配置")) }
+            return
+        }
 
         // 保存回调
         self.successHandler = onSuccess
         self.failureHandler = onFailure
         self.progressHandler = onProgress
 
-        // 创建 URLSession（self 作为 delegate 接收进度）
+        // 创建 URLSession
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForResource = 600 // 10分钟超时
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 600
         let urlSession = URLSession(configuration: config, delegate: self, delegateQueue: .main)
+        self.currentSession = urlSession
 
-        // 使用 uploadTask 上传文件
-        let task = urlSession.uploadTask(with: URLRequest(url: ftpURL), fromFile: localURL)
+        // 构建 PUT 请求
+        var request = URLRequest(url: ftpURL)
+        request.httpMethod = "PUT"
+
+        // 使用 data task 上传数据
+        let task = urlSession.uploadTask(with: request, from: fileData)
         task.resume()
     }
 
@@ -161,7 +169,51 @@ final class FTPUploader: NSObject {
         )
     }
 
-    // MARK: - 工具方法
+    // MARK: - 测试连接
+
+    /// 测试 FTP 连接是否正常
+    func testConnection(completion: @escaping (Result<String, String>) -> Void) {
+        guard !FTPConfig.host.isEmpty else {
+            completion(.failure("未配置 FTP 服务器信息"))
+            return
+        }
+
+        let testContent = "FTP connection test - \(timestampString())"
+        guard let testData = testContent.data(using: .utf8) else {
+            completion(.failure("创建测试数据失败"))
+            return
+        }
+
+        var dir = FTPConfig.remoteDir
+        if !dir.hasPrefix("/") { dir = "/" + dir }
+        if !dir.hasSuffix("/") { dir += "/" }
+
+        let ftpURLString = "ftp://\(FTPConfig.username):\(FTPConfig.password)@\(FTPConfig.host):\(FTPConfig.port)\(dir)test_connection.txt"
+
+        guard let ftpURL = URL(string: ftpURLString) else {
+            completion(.failure("无效的 FTP URL"))
+            return
+        }
+
+        self.successHandler = {
+            completion(.success("FTP 连接正常"))
+        }
+        self.failureHandler = { error in
+            completion(.failure(error.localizedDescription))
+        }
+        self.progressHandler = nil
+
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 30
+        let urlSession = URLSession(configuration: config, delegate: self, delegateQueue: .main)
+        self.currentSession = urlSession
+
+        var request = URLRequest(url: ftpURL)
+        request.httpMethod = "PUT"
+        let task = urlSession.uploadTask(with: request, from: testData)
+        task.resume()
+    }
 
     private func timestampString() -> String {
         let formatter = DateFormatter()
@@ -197,20 +249,21 @@ extension FTPUploader: URLSessionTaskDelegate {
 
         if let error = error {
             let nsError = error as NSError
-            // FTP 上传成功时有时也会返回 error code 0 或 domain NSURLErrorDomain
-            if nsError.code == 0 || nsError.code == NSURLErrorCancelled {
-                print("[FTPUploader] 上传完成")
+            print("[FTPUploader] 完成(错误): domain=\(nsError.domain), code=\(nsError.code), desc=\(nsError.localizedDescription)")
+
+            // code 0 或 -999(cancelled) 可能实际是成功
+            if nsError.code == 0 {
                 DispatchQueue.main.async { [weak self] in
                     self?.successHandler?()
                 }
             } else {
-                print("[FTPUploader] 上传失败: \(error.localizedDescription)")
+                let message = "错误码: \(nsError.code)\n\(nsError.localizedDescription)"
                 DispatchQueue.main.async { [weak self] in
-                    self?.failureHandler?(.networkError(error))
+                    self?.failureHandler?(.uploadFailed(message))
                 }
             }
         } else {
-            print("[FTPUploader] 上传完成")
+            print("[FTPUploader] 上传成功")
             DispatchQueue.main.async { [weak self] in
                 self?.successHandler?()
             }

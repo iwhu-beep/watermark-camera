@@ -122,6 +122,12 @@ class CameraController: ObservableObject {
 
     var watermarkProvider: (() -> String)?
 
+    /// 字号缩放倍数
+    var watermarkFontSizeScale: CGFloat = 1.0
+
+    /// 垂直位置
+    var watermarkVerticalPosition: Double = 0.15
+
     // MARK: - 初始化相机
 
     func setupCamera() {
@@ -262,7 +268,9 @@ class CameraController: ObservableObject {
 
         videoRecorder.startRecording(
             videoSize: CGSize(width: width, height: height),
-            watermarkProvider: provider
+            watermarkProvider: provider,
+            fontSizeScale: watermarkFontSizeScale,
+            verticalPosition: watermarkVerticalPosition
         ) { [weak self] url in
             self?.isRecording = false
             self?.onVideoRecorded?(url)

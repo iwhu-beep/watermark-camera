@@ -56,6 +56,12 @@ final class VideoRecorder: NSObject {
     /// 动态水印文本提供者（每帧调用）
     private var watermarkProvider: (() -> String)?
 
+    /// 字号缩放倍数
+    private var fontSizeScale: CGFloat = 1.0
+
+    /// 垂直位置（0=底部, 0.5=居中, 1=顶部）
+    private var verticalPosition: Double = 0.15
+
     // MARK: - 开始录制
 
     /// 开始录制视频
@@ -69,6 +75,8 @@ final class VideoRecorder: NSObject {
         outputURL: URL? = nil,
         videoSize: CGSize,
         watermarkProvider: @escaping () -> String,
+        fontSizeScale: CGFloat = 1.0,
+        verticalPosition: Double = 0.15,
         completion: @escaping (URL?) -> Void
     ) {
         guard !isRecording else { return }
@@ -77,6 +85,8 @@ final class VideoRecorder: NSObject {
         self.videoSize = videoSize
         self.watermarkProvider = watermarkProvider
         self.watermarkText = watermarkProvider()
+        self.fontSizeScale = fontSizeScale
+        self.verticalPosition = verticalPosition
         self.videoFrameCount = 0
         self.startTime = .zero
 
@@ -264,10 +274,14 @@ final class VideoRecorder: NSObject {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
 
         // 创建水印文字图层
+        // 基准字号：根据视频宽度计算，再乘以用户设置的倍数
+        let baseFontSize = max(14, CGFloat(width) / 40)
+        let fontSize = baseFontSize * fontSizeScale
+
         let textLayer = CATextLayer()
         textLayer.string = text
-        textLayer.font = UIFont.boldSystemFont(ofSize: max(14, CGFloat(width) / 60))
-        textLayer.fontSize = max(14, CGFloat(width) / 60)
+        textLayer.font = UIFont.boldSystemFont(ofSize: fontSize)
+        textLayer.fontSize = fontSize
         textLayer.foregroundColor = UIColor.white.cgColor
         textLayer.shadowColor = UIColor.black.cgColor
         textLayer.shadowOffset = CGSize(width: 1, height: 1)
@@ -282,13 +296,19 @@ final class VideoRecorder: NSObject {
         let textSize = (text as NSString).boundingRect(
             with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin],
-            attributes: [.font: UIFont.boldSystemFont(ofSize: textLayer.fontSize)],
+            attributes: [.font: UIFont.boldSystemFont(ofSize: fontSize)],
             context: nil
         ).size
 
+        // 根据 verticalPosition 计算Y坐标
+        // 0 = 底部（margin上方），0.5 = 居中，1 = 顶部
+        let bottomMargin = padding + textSize.height + 10
+        let availableSpace = size.height - bottomMargin - padding
+        let yPos = padding + availableSpace * CGFloat(1.0 - verticalPosition)
+
         textLayer.frame = CGRect(
             x: padding,
-            y: padding,
+            y: yPos,
             width: maxWidth,
             height: textSize.height + 10
         )
