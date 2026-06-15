@@ -94,8 +94,8 @@ class CameraController: ObservableObject {
     private let videoDelegate = VideoDataDelegate()
     private let videoRecorder = VideoRecorder()
 
-    /// 当前水印文本（录像时传入录制器）
-    var watermarkText: String = ""
+    /// 动态水印文本提供者
+    var watermarkProvider: (() -> String)?
 
     // MARK: - 初始化相机
 
@@ -195,6 +195,10 @@ class CameraController: ObservableObject {
 
     func startRecording() {
         guard session.isRunning, !isRecording else { return }
+        guard let provider = watermarkProvider else {
+            print("[Camera] watermarkProvider 未设置")
+            return
+        }
 
         let size = videoOutput.recommendedVideoSettingsForAssetWriter(writingTo: .mp4)
         let width = size?[AVVideoWidthKey] as? Int ?? 1920
@@ -202,7 +206,7 @@ class CameraController: ObservableObject {
 
         videoRecorder.startRecording(
             videoSize: CGSize(width: width, height: height),
-            watermarkText: watermarkText
+            watermarkProvider: provider
         ) { [weak self] url in
             self?.isRecording = false
             self?.onVideoRecorded?(url)

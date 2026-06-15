@@ -65,6 +65,10 @@ struct ContentView: View {
                 camera.setupCamera()
                 camera.onPhotoCaptured = handleCapturedPhoto
                 camera.onVideoRecorded = handleVideoRecorded
+                // 设置动态水印提供者
+                camera.watermarkProvider = { [self] in
+                    return buildWatermarkText()
+                }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 startLocationUpdates()
@@ -143,7 +147,7 @@ struct ContentView: View {
                 return f.string(from: context.date)
             }()
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 6) {
                 infoRow(label: "经度", value: currentLongitude)
                 infoRow(label: "纬度", value: currentLatitude)
                 infoRow(label: "坐标", value: "WGS84 坐标系")
@@ -156,7 +160,7 @@ struct ContentView: View {
                         TextField("输入备注...", text: $noteText)
                             .foregroundColor(.white)
                             .tint(.white)
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.system(size: 15, weight: .medium))
                             .onSubmit { showNoteInput = false }
                     } else {
                         Text(noteText.isEmpty ? "点击添加" : noteText)
@@ -164,10 +168,10 @@ struct ContentView: View {
                             .onTapGesture { showNoteInput = true }
                     }
                 }
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 15, weight: .medium))
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
             .background(Color.black.opacity(0.55))
             .cornerRadius(8)
             .padding(.horizontal, 12)
@@ -182,7 +186,7 @@ struct ContentView: View {
                 .foregroundColor(.white)
                 .lineLimit(1)
         }
-        .font(.system(size: 13, weight: .medium))
+        .font(.system(size: 15, weight: .medium))
     }
 
     // MARK: - 模式切换栏
@@ -204,7 +208,7 @@ struct ContentView: View {
         .background(Color.black.opacity(0.3))
         .cornerRadius(8)
         .padding(.horizontal, 60)
-        .padding(.top, 4)
+        .padding(.top, 8)
     }
 
     // MARK: - 底部控制栏
@@ -310,8 +314,6 @@ struct ContentView: View {
         if camera.isRecording {
             camera.stopRecording()
         } else {
-            // 更新水印文本给录制器
-            camera.watermarkText = buildWatermarkText()
             camera.startRecording()
         }
     }

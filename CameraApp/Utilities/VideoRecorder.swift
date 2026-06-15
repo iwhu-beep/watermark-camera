@@ -52,6 +52,9 @@ final class VideoRecorder: NSObject {
 
     /// 当前水印文本
     private var watermarkText: String = ""
+    
+    /// 动态水印文本提供者（每帧调用）
+    private var watermarkProvider: (() -> String)?
 
     // MARK: - 开始录制
 
@@ -65,14 +68,15 @@ final class VideoRecorder: NSObject {
     func startRecording(
         outputURL: URL? = nil,
         videoSize: CGSize,
-        watermarkText: String,
+        watermarkProvider: @escaping () -> String,
         completion: @escaping (URL?) -> Void
     ) {
         guard !isRecording else { return }
 
         self.completion = completion
         self.videoSize = videoSize
-        self.watermarkText = watermarkText
+        self.watermarkProvider = watermarkProvider
+        self.watermarkText = watermarkProvider()
         self.videoFrameCount = 0
         self.startTime = .zero
 
@@ -171,8 +175,10 @@ final class VideoRecorder: NSObject {
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
+        // 每帧动态获取水印文本（更新时间等）
+        let currentWatermark = watermarkProvider?() ?? watermarkText
         // 在原始帧上叠加水印
-        renderWatermark(on: pixelBuffer, text: watermarkText)
+        renderWatermark(on: pixelBuffer, text: currentWatermark)
         adaptor?.append(pixelBuffer, withPresentationTime: relativeTime)
         videoFrameCount += 1
     }
