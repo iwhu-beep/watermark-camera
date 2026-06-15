@@ -161,16 +161,19 @@ final class VideoRecorder: NSObject {
               let videoInput = videoInput,
               videoInput.isReadyForMoreMediaData else { return }
 
-        let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let rawTimestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         if videoFrameCount == 0 {
-            startTime = timestamp
+            startTime = rawTimestamp
         }
+
+        // 将绝对时间戳转换为相对时间戳（从0开始）
+        let relativeTime = CMTimeSubtract(rawTimestamp, startTime)
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
         // 在原始帧上叠加水印
         renderWatermark(on: pixelBuffer, text: watermarkText)
-        adaptor?.append(pixelBuffer, withPresentationTime: timestamp)
+        adaptor?.append(pixelBuffer, withPresentationTime: relativeTime)
         videoFrameCount += 1
     }
 
@@ -184,7 +187,36 @@ final class VideoRecorder: NSObject {
               let audioInput = audioInput,
               audioInput.isReadyForMoreMediaData else { return }
 
-        audioInput.append(sampleBuffer)
+        // 将音频时间戳也转换为相对时间
+        guard startTime != .zero else { return } // 等待第一帧视频设定基准
+        let rawTimestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let relativeTime = CMTimeSubtract(rawTimestamp, startTime)
+
+        // 创建新的 sampleBuffer 使用相对时间戳
+        if let adjustedBuffer = adjustedSampleBuffer(sampleBuffer, presentationTime: relativeTime) {
+            audioInput.append(adjustedBuffer)
+        }
+    }
+
+    /// 创建调整时间戳后的 CMSampleBuffer 副本
+    private func adjustedSampleBuffer(_ sampleBuffer: CMSampleBuffer, presentationTime: CMTime) -> CMSampleBuffer? {
+        var adjustedTiming = CMSampleTimingInfo(
+            duration: CMSampleBufferGetDuration(sampleBuffer),
+            presentationTimeStamp: presentationTime,
+            decodeTimeStamp: .invalid
+        )
+        var outputBuffer: CMSampleBuffer?
+        let count = CMSampleBufferGetNumSamples(sampleBuffer)
+
+        guard CMSampleBufferCreateCopyWithNewTiming(
+            allocator: kCFAllocatorDefault,
+            sampleBuffer: sampleBuffer,
+            sampleTimingEntryCount: 1,
+            sampleTimingArray: &adjustedTiming,
+            sampleBufferOut: &outputBuffer
+        ) == noErr else { return nil }
+
+        return outputBuffer
     }
 
     // MARK: - 停止录制
