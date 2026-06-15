@@ -175,12 +175,11 @@ struct SettingsView: View {
         FTPConfig.password = settings.ftpPassword
         FTPConfig.remoteDir = settings.ftpRemoteDir
 
-        FTPUploader.shared.testConnection { result in
+        FTPUploader.shared.testConnection { success, msg in
             isTestingFTP = false
-            switch result {
-            case .success(let msg):
+            if success {
                 ftpTestResult = "✓ \(msg)"
-            case .failure(let msg):
+            } else {
                 ftpTestResult = "✗ \(msg)"
             }
         }

@@ -172,15 +172,15 @@ final class FTPUploader: NSObject {
     // MARK: - 测试连接
 
     /// 测试 FTP 连接是否正常
-    func testConnection(completion: @escaping (Result<String, String>) -> Void) {
+    func testConnection(completion: @escaping (Bool, String) -> Void) {
         guard !FTPConfig.host.isEmpty else {
-            completion(.failure("未配置 FTP 服务器信息"))
+            completion(false, "未配置 FTP 服务器信息")
             return
         }
 
         let testContent = "FTP connection test - \(timestampString())"
         guard let testData = testContent.data(using: .utf8) else {
-            completion(.failure("创建测试数据失败"))
+            completion(false, "创建测试数据失败")
             return
         }
 
@@ -191,15 +191,15 @@ final class FTPUploader: NSObject {
         let ftpURLString = "ftp://\(FTPConfig.username):\(FTPConfig.password)@\(FTPConfig.host):\(FTPConfig.port)\(dir)test_connection.txt"
 
         guard let ftpURL = URL(string: ftpURLString) else {
-            completion(.failure("无效的 FTP URL"))
+            completion(false, "无效的 FTP URL")
             return
         }
 
         self.successHandler = {
-            completion(.success("FTP 连接正常"))
+            completion(true, "FTP 连接正常")
         }
         self.failureHandler = { error in
-            completion(.failure(error.localizedDescription))
+            completion(false, error.localizedDescription)
         }
         self.progressHandler = nil
 
