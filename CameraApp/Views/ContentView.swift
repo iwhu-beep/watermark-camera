@@ -462,71 +462,9 @@ struct ContentView: View {
         return status == .authorized || status == .limited
     }
 
-    // MARK: - 上传（根据目标选择 FTP 或百度网盘）
+    // MARK: - 上传到百度网盘
 
     private func uploadImage(_ image: UIImage) {
-        switch settings.uploadTarget {
-        case .ftp:
-            ftpUploadImage(image)
-        case .baidu:
-            baiduUploadImage(image)
-        }
-    }
-
-    private func uploadVideo(_ url: URL) {
-        switch settings.uploadTarget {
-        case .ftp:
-            ftpUploadVideo(url)
-        case .baidu:
-            baiduUploadVideo(url)
-        }
-    }
-
-    // MARK: - FTP 上传
-
-    private func ftpUploadImage(_ image: UIImage) {
-        syncFTPConfig()
-        FTPUploader.shared.uploadImage(
-            image,
-            onProgress: { progress in print("[FTP] 上传: \(Int(progress * 100))%") },
-            onSuccess: {
-                uploadResultMessage = "上传成功"
-                showUploadResult = true
-            },
-            onFailure: { error in
-                uploadResultMessage = "上传失败: \(error.localizedDescription)"
-                showUploadResult = true
-            }
-        )
-    }
-
-    private func ftpUploadVideo(_ url: URL) {
-        syncFTPConfig()
-        FTPUploader.shared.uploadVideo(
-            url,
-            onProgress: { progress in print("[FTP] 上传: \(Int(progress * 100))%") },
-            onSuccess: {
-                uploadResultMessage = "视频上传成功"
-                showUploadResult = true
-            },
-            onFailure: { error in
-                uploadResultMessage = "上传失败: \(error.localizedDescription)"
-                showUploadResult = true
-            }
-        )
-    }
-
-    private func syncFTPConfig() {
-        FTPConfig.host = settings.ftpHost
-        FTPConfig.port = Int(settings.ftpPort) ?? 21
-        FTPConfig.username = settings.ftpUsername
-        FTPConfig.password = settings.ftpPassword
-        FTPConfig.remoteDir = settings.ftpRemoteDir
-    }
-
-    // MARK: - 百度网盘上传
-
-    private func baiduUploadImage(_ image: UIImage) {
         BaiduUploader.shared.uploadImage(
             image,
             onProgress: { progress in print("[Baidu] 上传: \(Int(progress * 100))%") },
@@ -541,7 +479,7 @@ struct ContentView: View {
         )
     }
 
-    private func baiduUploadVideo(_ url: URL) {
+    private func uploadVideo(_ url: URL) {
         BaiduUploader.shared.uploadVideo(
             url,
             onProgress: { progress in print("[Baidu] 上传: \(Int(progress * 100))%") },

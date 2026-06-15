@@ -29,16 +29,6 @@ enum CameraMode: String, CaseIterable {
     case video = "录像"
 }
 
-// MARK: - 上传目标
-
-/// 文件上传目标
-enum UploadTarget: String, CaseIterable, Identifiable {
-    case ftp = "FTP"
-    case baidu = "百度网盘"
-
-    var id: String { rawValue }
-}
-
 // MARK: - 应用设置（持久化存储）
 
 /// 全局设置模型，所有设置自动保存到UserDefaults
@@ -46,36 +36,10 @@ class AppSettings: ObservableObject {
 
     private let defaults = UserDefaults.standard
 
-    // MARK: FTP上传
+    // MARK: 上传设置
 
     @Published var autoUpload: Bool {
         didSet { defaults.set(autoUpload, forKey: "autoUpload") }
-    }
-
-    @Published var ftpHost: String {
-        didSet { defaults.set(ftpHost, forKey: "ftpHost") }
-    }
-
-    @Published var ftpPort: String {
-        didSet { defaults.set(ftpPort, forKey: "ftpPort") }
-    }
-
-    @Published var ftpUsername: String {
-        didSet { defaults.set(ftpUsername, forKey: "ftpUsername") }
-    }
-
-    @Published var ftpPassword: String {
-        didSet { defaults.set(ftpPassword, forKey: "ftpPassword") }
-    }
-
-    @Published var ftpRemoteDir: String {
-        didSet { defaults.set(ftpRemoteDir, forKey: "ftpRemoteDir") }
-    }
-
-    // MARK: 上传目标
-
-    @Published var uploadTarget: UploadTarget {
-        didSet { defaults.set(uploadTarget.rawValue, forKey: "uploadTarget") }
     }
 
     // MARK: 坐标格式
@@ -97,21 +61,7 @@ class AppSettings: ObservableObject {
     // MARK: - 初始化（从UserDefaults读取已保存的设置）
 
     init() {
-        // FTP 设置
         self.autoUpload = defaults.bool(forKey: "autoUpload")
-        self.ftpHost = defaults.string(forKey: "ftpHost") ?? ""
-        self.ftpPort = defaults.string(forKey: "ftpPort") ?? "21"
-        self.ftpUsername = defaults.string(forKey: "ftpUsername") ?? ""
-        self.ftpPassword = defaults.string(forKey: "ftpPassword") ?? ""
-        self.ftpRemoteDir = defaults.string(forKey: "ftpRemoteDir") ?? "/"
-
-        // 上传目标
-        if let targetRaw = defaults.string(forKey: "uploadTarget"),
-           let target = UploadTarget(rawValue: targetRaw) {
-            self.uploadTarget = target
-        } else {
-            self.uploadTarget = .ftp
-        }
 
         // 坐标格式
         if let formatRaw = defaults.string(forKey: "coordinateFormat"),
