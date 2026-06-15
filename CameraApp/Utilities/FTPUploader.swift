@@ -2,7 +2,7 @@
 //  FTPUploader.swift
 //  CameraApp
 //
-//  FTP 文件上传工具类
+//  FTP 文件上传工具类，使用 CFWriteStream
 //  路径: CameraApp/Utilities/FTPUploader.swift
 //
 
@@ -26,6 +26,7 @@ enum FTPUploadError: Error, LocalizedError {
     case fileReadFailed
     case uploadFailed(String)
     case networkError(Error)
+    case streamError(String)
 
     var errorDescription: String? {
         switch self {
@@ -37,6 +38,8 @@ enum FTPUploadError: Error, LocalizedError {
             return "FTP 上传失败: \(msg)"
         case .networkError(let error):
             return "网络错误: \(error.localizedDescription)"
+        case .streamError(let msg):
+            return msg
         }
     }
 }
@@ -47,11 +50,15 @@ final class FTPUploader: NSObject {
 
     static let shared = FTPUploader()
 
-    private var currentSession: URLSession?
+    private var writeStream: OutputStream?
+    private var dataToUpload: Data?
+    private var bytesWritten: Int = 0
+    private var streamRunLoop: RunLoop?
+    private var streamThread: Thread?
+
     private var successHandler: (() -> Void)?
     private var failureHandler: ((FTPUploadError) -> Void)?
     private var progressHandler: ((Double) -> Void)?
-    private var currentData = Data()
 
     private override init() {
         super.init()
@@ -85,36 +92,22 @@ final class FTPUploader: NSObject {
         if !dir.hasPrefix("/") { dir = "/" + dir }
         if !dir.hasSuffix("/") { dir += "/" }
 
-        // 直接拼接 FTP URL
-        let ftpURLString = "ftp://\(FTPConfig.username):\(FTPConfig.password)@\(FTPConfig.host):\(FTPConfig.port)\(dir)\(fileName)"
-
         print("[FTPUploader] 目标: ftp://\(FTPConfig.username):***@\(FTPConfig.host):\(FTPConfig.port)\(dir)\(fileName)")
         print("[FTPUploader] 文件大小: \(fileData.count) bytes")
 
-        guard let ftpURL = URL(string: ftpURLString) else {
-            DispatchQueue.main.async { onFailure(.uploadFailed("无效的 FTP URL，请检查配置")) }
-            return
-        }
-
-        // 保存回调
         self.successHandler = onSuccess
         self.failureHandler = onFailure
         self.progressHandler = onProgress
 
-        // 创建 URLSession
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 600
-        let urlSession = URLSession(configuration: config, delegate: self, delegateQueue: .main)
-        self.currentSession = urlSession
-
-        // 构建 PUT 请求
-        var request = URLRequest(url: ftpURL)
-        request.httpMethod = "PUT"
-
-        // 使用 data task 上传数据
-        let task = urlSession.uploadTask(with: request, from: fileData)
-        task.resume()
+        // 使用 CFWriteStream 上传
+        startStreamUpload(
+            data: fileData,
+            host: FTPConfig.host,
+            port: FTPConfig.port,
+            username: FTPConfig.username,
+            password: FTPConfig.password,
+            remotePath: "\(dir)\(fileName)"
+        )
     }
 
     // MARK: - 上传 UIImage
@@ -171,7 +164,6 @@ final class FTPUploader: NSObject {
 
     // MARK: - 测试连接
 
-    /// 测试 FTP 连接是否正常
     func testConnection(completion: @escaping (Bool, String) -> Void) {
         guard !FTPConfig.host.isEmpty else {
             completion(false, "未配置 FTP 服务器信息")
@@ -188,13 +180,6 @@ final class FTPUploader: NSObject {
         if !dir.hasPrefix("/") { dir = "/" + dir }
         if !dir.hasSuffix("/") { dir += "/" }
 
-        let ftpURLString = "ftp://\(FTPConfig.username):\(FTPConfig.password)@\(FTPConfig.host):\(FTPConfig.port)\(dir)test_connection.txt"
-
-        guard let ftpURL = URL(string: ftpURLString) else {
-            completion(false, "无效的 FTP URL")
-            return
-        }
-
         self.successHandler = {
             completion(true, "FTP 连接正常")
         }
@@ -203,69 +188,160 @@ final class FTPUploader: NSObject {
         }
         self.progressHandler = nil
 
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 30
-        let urlSession = URLSession(configuration: config, delegate: self, delegateQueue: .main)
-        self.currentSession = urlSession
-
-        var request = URLRequest(url: ftpURL)
-        request.httpMethod = "PUT"
-        let task = urlSession.uploadTask(with: request, from: testData)
-        task.resume()
+        startStreamUpload(
+            data: testData,
+            host: FTPConfig.host,
+            port: FTPConfig.port,
+            username: FTPConfig.username,
+            password: FTPConfig.password,
+            remotePath: "\(dir)test_connection.txt"
+        )
     }
+
+    // MARK: - CFWriteStream 上传实现
+
+    private func startStreamUpload(
+        data: Data,
+        host: String,
+        port: Int,
+        username: String,
+        password: String,
+        remotePath: String
+    ) {
+        self.dataToUpload = data
+        self.bytesWritten = 0
+
+        // 创建 CFWriteStream
+        guard let stream = CFWriteStreamCreateWithFTPURL(
+            kCFAllocatorDefault,
+            URL(string: "ftp://\(host):\(port)\(remotePath)")! as CFURL
+        )?.takeRetainedValue() as OutputStream? else {
+            DispatchQueue.main.async {
+                self.failureHandler?(.streamError("创建 FTP 流失败"))
+            }
+            return
+        }
+
+        // 设置 FTP 凭据
+        stream.setProperty(username as NSString, forKey: .init(kCFStreamPropertyFTPUserName))
+        stream.setProperty(password as NSString, forKey: .init(kCFStreamPropertyFTPPassword))
+
+        // 设置代理
+        stream.delegate = self
+        stream.schedule(in: .current, forMode: .common)
+
+        // 打开流
+        stream.open()
+        self.writeStream = stream
+
+        print("[FTPUploader] 流已打开，等待连接...")
+    }
+
+    // MARK: - 工具方法
 
     private func timestampString() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss"
         return formatter.string(from: Date())
     }
+
+    private func cleanup() {
+        writeStream?.close()
+        writeStream?.remove(from: .current, forMode: .common)
+        writeStream = nil
+        dataToUpload = nil
+    }
 }
 
-// MARK: - URLSessionTaskDelegate
+// MARK: - StreamDelegate
 
-extension FTPUploader: URLSessionTaskDelegate {
+extension FTPUploader: StreamDelegate {
 
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        didSendBodyData bytesSent: Int64,
-        totalBytesSent: Int64,
-        totalBytesExpectedToSend: Int64
-    ) {
-        guard totalBytesExpectedToSend > 0 else { return }
-        let progress = Double(totalBytesSent) / Double(totalBytesExpectedToSend)
-        DispatchQueue.main.async { [weak self] in
-            self?.progressHandler?(progress)
+    func stream(_ aStream: Stream, handle eventCode: Stream.Event) {
+        print("[FTPUploader] 流事件: \(eventCode.rawValue)")
+
+        switch eventCode {
+        case .openCompleted:
+            if let error = aStream.streamError {
+                print("[FTPUploader] 打开失败: \(error.localizedDescription)")
+                cleanup()
+                DispatchQueue.main.async {
+                    self.failureHandler?(.streamError("连接失败: \(error.localizedDescription)"))
+                }
+            } else {
+                print("[FTPUploader] 连接成功，开始写入数据")
+                writeToStream()
+            }
+
+        case .hasSpaceAvailable:
+            writeToStream()
+
+        case .endEncountered:
+            print("[FTPUploader] 写入完成")
+            cleanup()
+            DispatchQueue.main.async {
+                self.successHandler?()
+            }
+
+        case .errorOccurred:
+            if let error = aStream.streamError {
+                print("[FTPUploader] 流错误: \(error.localizedDescription)")
+                cleanup()
+                DispatchQueue.main.async {
+                    self.failureHandler?(.streamError("上传错误: \(error.localizedDescription)"))
+                }
+            }
+
+        default:
+            break
         }
     }
 
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        didCompleteWithError error: Error?
-    ) {
-        session.finishTasksAndInvalidate()
+    private func writeToStream() {
+        guard let stream = writeStream,
+              let data = dataToUpload,
+              stream.hasSpaceAvailable else { return }
 
-        if let error = error {
-            let nsError = error as NSError
-            print("[FTPUploader] 完成(错误): domain=\(nsError.domain), code=\(nsError.code), desc=\(nsError.localizedDescription)")
+        let totalBytes = data.count
 
-            // code 0 或 -999(cancelled) 可能实际是成功
-            if nsError.code == 0 {
-                DispatchQueue.main.async { [weak self] in
-                    self?.successHandler?()
-                }
-            } else {
-                let message = "错误码: \(nsError.code)\n\(nsError.localizedDescription)"
-                DispatchQueue.main.async { [weak self] in
-                    self?.failureHandler?(.uploadFailed(message))
-                }
+        // 写入数据块
+        let chunkSize = 4096
+        while bytesWritten < totalBytes && stream.hasSpaceAvailable {
+            let remainingBytes = totalBytes - bytesWritten
+            let bytesToWrite = min(chunkSize, remainingBytes)
+
+            let bytesWrittenThisChunk = data.withUnsafeBytes { bufferPointer -> Int in
+                guard let baseAddress = bufferPointer.baseAddress else { return -1 }
+                let ptr = baseAddress.advanced(by: bytesWritten)
+                return stream.write(ptr.assumingMemoryBound(to: UInt8.self), maxLength: bytesToWrite)
             }
-        } else {
-            print("[FTPUploader] 上传成功")
-            DispatchQueue.main.async { [weak self] in
-                self?.successHandler?()
+
+            if bytesWrittenThisChunk < 0 {
+                if let error = stream.streamError {
+                    print("[FTPUploader] 写入错误: \(error.localizedDescription)")
+                    cleanup()
+                    DispatchQueue.main.async {
+                        self.failureHandler?(.streamError("写入失败: \(error.localizedDescription)"))
+                    }
+                }
+                return
+            }
+
+            bytesWritten += bytesWrittenThisChunk
+
+            // 报告进度
+            let progress = Double(bytesWritten) / Double(totalBytes)
+            DispatchQueue.main.async {
+                self.progressHandler?(progress)
+            }
+        }
+
+        // 所有数据写入完成
+        if bytesWritten >= totalBytes {
+            print("[FTPUploader] 数据写入完成 (\(bytesWritten) bytes)")
+            cleanup()
+            DispatchQueue.main.async {
+                self.successHandler?()
             }
         }
     }
