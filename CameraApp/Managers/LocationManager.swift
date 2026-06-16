@@ -17,8 +17,8 @@ import UIKit
 
 /// 单次定位结果
 enum LocationResult {
-    /// 定位成功，返回经纬度
-    case success(longitude: Double, latitude: Double)
+    /// 定位成功，返回经纬度和地址信息
+    case success(longitude: Double, latitude: Double, address: String)
     /// 定位失败
     case failure(error: LocationError)
 }
@@ -287,16 +287,20 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
         invalidateTimer()
         manager.stopUpdatingLocation()
 
-        let result: LocationResult = .success(
-            longitude: location.coordinate.longitude,
-            latitude: location.coordinate.latitude
-        )
+        // 进行逆地理编码获取地址
+        reverseGeocode(location: location) { [weak self] address in
+            let result: LocationResult = .success(
+                longitude: location.coordinate.longitude,
+                latitude: location.coordinate.latitude,
+                address: address
+            )
 
-        DispatchQueue.main.async { [weak self] in
-            self?.isLocating = false
-            self?.lastResult = result
-            self?.locationCompletion?(result)
-            self?.locationCompletion = nil
+            DispatchQueue.main.async {
+                self?.isLocating = false
+                self?.lastResult = result
+                self?.locationCompletion?(result)
+                self?.locationCompletion = nil
+            }
         }
     }
 
@@ -312,6 +316,61 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
             self?.lastResult = result
             self?.locationCompletion?(result)
             self?.locationCompletion = nil
+        }
+    }
+
+    // MARK: - 逆地理编码
+
+    /// 逆地理编码获取地址
+    private func reverseGeocode(location: CLLocation, completion: @escaping (String) -> Void) {
+        let geocoder = CLGeocoder()
+        geocoder.reverseGeocodeLocation(location) { placemarks, error in
+            if let error = error {
+                print("[Location] 逆地理编码失败: \(error.localizedDescription)")
+                completion("GPS定位")
+                return
+            }
+
+            guard let placemark = placemarks?.first else {
+                completion("GPS定位")
+                return
+            }
+
+            // 构建地址字符串
+            var addressParts: [String] = []
+
+            // 添加行政区划（市/县）
+            if let locality = placemark.locality, !locality.isEmpty {
+                addressParts.append(locality)
+            } else if let administrativeArea = placemark.administrativeArea, !administrativeArea.isEmpty {
+                addressParts.append(administrativeArea)
+            }
+
+            // 添加子区域（区/县）
+            if let subLocality = placemark.subLocality, !subLocality.isEmpty {
+                if !addressParts.contains(subLocality) {
+                    addressParts.append(subLocality)
+                }
+            } else if let subAdministrativeArea = placemark.subAdministrativeArea, !subAdministrativeArea.isEmpty {
+                if !addressParts.contains(subAdministrativeArea) {
+                    addressParts.append(subAdministrativeArea)
+                }
+            }
+
+            // 添加具体位置名称（POI）
+            if let name = placemark.name, !name.isEmpty, name != placemark.subLocality {
+                addressParts.append(name)
+            }
+
+            if addressParts.isEmpty {
+                // 尝试使用 thoroughfare
+                if let thoroughfare = placemark.thoroughfare, !thoroughfare.isEmpty {
+                    addressParts.append(thoroughfare)
+                }
+            }
+
+            let address = addressParts.joined(separator: "")
+            completion(address.isEmpty ? "GPS定位" : address)
         }
     }
 

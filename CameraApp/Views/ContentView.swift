@@ -674,11 +674,11 @@ struct ContentView: View {
 
     private func handleLocationResult(_ result: LocationResult) {
         switch result {
-        case .success(let lon, let lat):
+        case .success(let lon, let lat, let address):
             currentLongitude = String(format: "%.6f", lon)
             currentLatitude = String(format: "%.6f", lat)
-            currentAddress = "GPS定位"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+            currentAddress = address
+            DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
                 LocationManager.shared.requestLocation { result in
                     handleLocationResult(result)
                 }
