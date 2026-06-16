@@ -251,7 +251,7 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     Text("经度：")
                         .foregroundColor(.white.opacity(0.8))
-                    Text(settings.useCustomCoord ? String(format: "%.6f", customLongitude) : currentLongitude)
+                    Text(settings.useCustomCoord ? String(format: "%.6f", settings.customLongitude) : currentLongitude)
                         .foregroundColor(settings.useCustomCoord ? .green : .white)
                         .lineLimit(1)
                 }
@@ -261,7 +261,7 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     Text("纬度：")
                         .foregroundColor(.white.opacity(0.8))
-                    Text(settings.useCustomCoord ? String(format: "%.6f", customLatitude) : currentLatitude)
+                    Text(settings.useCustomCoord ? String(format: "%.6f", settings.customLatitude) : currentLatitude)
                         .foregroundColor(settings.useCustomCoord ? .green : .white)
                         .lineLimit(1)
                 }
@@ -273,8 +273,8 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     Text("地址：")
                         .foregroundColor(.white.opacity(0.8))
-                    if settings.useCustomCoord && !customAddress.isEmpty {
-                        Text(customAddress)
+                    if settings.useCustomCoord && !settings.customAddress.isEmpty {
+                        Text(settings.customAddress)
                             .foregroundColor(.green)
                             .lineLimit(1)
                     } else {
@@ -438,12 +438,12 @@ struct ContentView: View {
                         Text("预览")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text("经度: \(String(format: "%.6f", customLongitude))")
+                        Text("经度: \(String(format: "%.6f", settings.customLongitude))")
                             .font(.system(.caption, design: .monospaced))
-                        Text("纬度: \(String(format: "%.6f", customLatitude))")
+                        Text("纬度: \(String(format: "%.6f", settings.customLatitude))")
                             .font(.system(.caption, design: .monospaced))
-                        if !customAddress.isEmpty {
-                            Text("地址: \(customAddress)")
+                        if !settings.customAddress.isEmpty {
+                            Text("地址: \(settings.customAddress)")
                                 .font(.system(.caption, design: .monospaced))
                         }
                     }
@@ -457,19 +457,19 @@ struct ContentView: View {
                     // 使用当前GPS坐标
                     Button("使用当前GPS坐标") {
                         if currentLongitude != "---" {
-                            customLongitude = Double(currentLongitude) ?? settings.customLongitude
+                            settings.customLongitude = Double(currentLongitude) ?? settings.customLongitude
                         }
                         if currentLatitude != "---" {
-                            customLatitude = Double(currentLatitude) ?? settings.customLatitude
+                            settings.customLatitude = Double(currentLatitude) ?? settings.customLatitude
                         }
-                        customAddress = currentAddress
+                        settings.customAddress = currentAddress
                     }
                     .foregroundColor(.blue)
                 }
 
                 Button("恢复为GPS定位") {
                     settings.useCustomCoord = false
-                    customAddress = ""
+                    settings.customAddress = ""
                 }
                 .foregroundColor(.red)
 
@@ -621,7 +621,7 @@ struct ContentView: View {
         guard !isCapturing, !isCountingDown, camera.isReady else { return }
 
         if settings.delaySeconds > 0 {
-            startCountdown(delaySeconds) {
+            startCountdown(settings.delaySeconds) {
                 isCapturing = true
                 camera.capturePhoto()
             }
@@ -673,10 +673,10 @@ struct ContentView: View {
         var lines: [String] = []
 
         // 使用自定义经纬度或GPS定位
-        let displayLon = settings.useCustomCoord ? String(format: "%.6f", customLongitude) : currentLongitude
-        let displayLat = settings.useCustomCoord ? String(format: "%.6f", customLatitude) : currentLatitude
+        let displayLon = settings.useCustomCoord ? String(format: "%.6f", settings.customLongitude) : currentLongitude
+        let displayLat = settings.useCustomCoord ? String(format: "%.6f", settings.customLatitude) : currentLatitude
         let displayAddr: String
-        if settings.useCustomCoord && !customAddress.isEmpty {
+        if settings.useCustomCoord && !settings.customAddress.isEmpty {
             displayAddr = settings.customAddress
         } else {
             displayAddr = currentAddress
