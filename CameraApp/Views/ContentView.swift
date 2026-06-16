@@ -66,14 +66,11 @@ struct ContentView: View {
                     }
                 )
 
+            // 右侧缩放滑块
+            zoomSlider
+
             VStack {
                 topToolBar
-
-                // 缩放指示器
-                if camera.zoomFactor > 1.05 {
-                    zoomIndicator
-                        .transition(.opacity)
-                }
 
                 // 倒计时显示
                 if isCountingDown {
@@ -156,21 +153,102 @@ struct ContentView: View {
         .padding(.top, 20)
     }
 
-    // MARK: - 缩放指示器
+    // MARK: - 缩放滑块
 
-    private var zoomIndicator: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "plus.magnifyingglass")
-                .font(.system(size: 14))
-            Text(String(format: "%.1fx", camera.zoomFactor))
-                .font(.system(size: 16, weight: .bold, design: .monospaced))
+    private var zoomSlider: some View {
+        HStack {
+            Spacer()
+            VStack(spacing: 8) {
+                // 放大倍数标签
+                Text(String(format: "%.1fx", camera.zoomFactor))
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.black.opacity(0.5))
+                    .cornerRadius(4)
+
+                // 放大按钮
+                Button(action: {
+                    camera.zoomBegin()
+                    let currentScale = camera.zoomFactor
+                    camera.zoomUpdate(scale: min(currentScale + 0.5, camera.maxZoomFactor) / currentScale)
+                }) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color.black.opacity(0.4))
+                        .cornerRadius(16)
+                }
+
+                // 竖向滑块
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        // 已填充部分（从上到下表示放大）
+                        let totalHeight = geo.size.height
+                        let fillRatio = (camera.zoomFactor - camera.minZoomFactor) / (camera.maxZoomFactor - camera.minZoomFactor)
+                        let fillHeight = totalHeight * fillRatio
+
+                        Spacer()
+                        Rectangle()
+                            .fill(Color.yellow.opacity(0.8))
+                            .frame(height: fillHeight)
+                    }
+                    .frame(width: 4)
+                    .background(
+                        Rectangle()
+                            .fill(Color.white.opacity(0.3))
+                            .frame(width: 4)
+                    )
+                    .cornerRadius(2)
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                let height = geo.size.height
+                                // 越往下越小，越往上越大
+                                let ratio = 1.0 - max(0, min(1, value.location.y / height))
+                                let newFactor = camera.minZoomFactor + (camera.maxZoomFactor - camera.minZoomFactor) * ratio
+                                camera.zoomBegin()
+                                camera.zoomUpdate(scale: newFactor / camera.zoomFactor)
+                            }
+                    )
+                }
+                .frame(width: 30, height: 150)
+
+                // 缩小按钮
+                Button(action: {
+                    camera.zoomBegin()
+                    let currentScale = camera.zoomFactor
+                    camera.zoomUpdate(scale: max(currentScale - 0.5, camera.minZoomFactor) / currentScale)
+                }) {
+                    Image(systemName: "minus")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color.black.opacity(0.4))
+                        .cornerRadius(16)
+                }
+
+                // 重置按钮
+                if camera.zoomFactor > 1.05 {
+                    Button(action: {
+                        camera.zoomBegin()
+                        camera.zoomUpdate(scale: 1.0 / camera.zoomFactor)
+                    }) {
+                        Text("1x")
+                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .foregroundColor(.yellow)
+                            .frame(width: 32, height: 32)
+                            .background(Color.black.opacity(0.4))
+                            .cornerRadius(16)
+                    }
+                }
+            }
+            .padding(.trailing, 12)
         }
-        .foregroundColor(.white)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(Color.black.opacity(0.6))
-        .cornerRadius(20)
-        .padding(.top, 8)
     }
 
     // MARK: - 录像指示器

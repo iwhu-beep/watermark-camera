@@ -93,15 +93,23 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     /// 定位超时计时器
     private var timeoutTimer: Timer?
 
-    /// 超时时间（秒）
-    private let timeoutInterval: TimeInterval = 10.0
+    /// 超时时间（秒）—— 室内定位可能需要更久
+    private let timeoutInterval: TimeInterval = 20.0
+
+    /// 缓存的最佳定位结果
+    private var bestLocation: CLLocation?
+
+    /// 是否已经回调过一次结果
+    private var hasDeliveredFirstResult: Bool = false
 
     // MARK: - 初始化
 
     private override init() {
         super.init()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
+        // 使用百米精度，允许Cell/WiFi定位，室内/车内也能快速定位
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        manager.distanceFilter = 10 // 每移动10米才更新
     }
 
     // MARK: - 权限检查
@@ -166,11 +174,11 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
             break
         }
 
-        // 3. iOS 14+ 检查精确位置开关
+        // 3. iOS 14+ 检查精确位置开关（仅警告，不拒绝）
         if #available(iOS 14, *) {
             if manager.accuracyAuthorization == .reducedAccuracy {
-                deliverResult(.failure(error: .accuracyReduced), completion: completion)
-                return
+                // 模糊位置也可以用，继续定位（室内/车内场景）
+                print("[Location] 当前为模糊位置权限，将使用基站/WiFi定位")
             }
         }
 
@@ -257,12 +265,10 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
         switch status {
         case .authorizedWhenInUse, .authorizedAlways:
-            // iOS 14+ 首次授权后检查精度
+            // iOS 14+ 首次授权后检查精度（仅提示，不拒绝）
             if #available(iOS 14, *) {
                 if manager.accuracyAuthorization == .reducedAccuracy {
-                    locationCompletion = nil
-                    deliverResult(.failure(error: .accuracyReduced), completion: completion)
-                    return
+                    print("[Location] 模糊位置权限，继续定位")
                 }
             }
             // 权限OK，发起定位
@@ -284,27 +290,98 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
 
-        invalidateTimer()
-        manager.stopUpdatingLocation()
+        // 渐进式定位：先快速返回第一个结果（Cell/WiFi），然后继续等更精确的
+        let isFirst = !hasDeliveredFirstResult
 
-        // 进行逆地理编码获取地址
-        reverseGeocode(location: location) { [weak self] address in
-            let result: LocationResult = .success(
-                longitude: location.coordinate.longitude,
-                latitude: location.coordinate.latitude,
-                address: address
-            )
+        // 检查是否比之前的结果更精确
+        let isBetter: Bool
+        if let best = bestLocation {
+            // 更小的 horizontalAccuracy 表示更精确
+            isBetter = location.horizontalAccuracy < best.horizontalAccuracy
+        } else {
+            isBetter = true
+        }
 
-            DispatchQueue.main.async {
-                self?.isLocating = false
-                self?.lastResult = result
-                self?.locationCompletion?(result)
-                self?.locationCompletion = nil
+        if isBetter {
+            bestLocation = location
+        }
+
+        if isFirst {
+            // 第一次拿到结果，立即回调并重置超时
+            hasDeliveredFirstResult = true
+            invalidateTimer()
+
+            reverseGeocode(location: location) { [weak self] address in
+                let result: LocationResult = .success(
+                    longitude: location.coordinate.longitude,
+                    latitude: location.coordinate.latitude,
+                    address: address
+                )
+
+                DispatchQueue.main.async {
+                    self?.lastResult = result
+                    self?.locationCompletion?(result)
+                    // 不置空 locationCompletion，因为后续可能还有更精确的结果
+                }
+            }
+
+            // 如果精度已经很好了（< 50米），直接停止
+            if location.horizontalAccuracy <= 50 {
+                manager.stopUpdatingLocation()
+                locationCompletion = nil
+                DispatchQueue.main.async {
+                    self.isLocating = false
+                }
+            }
+        } else if isBetter {
+            // 更精确的结果，更新回调
+            reverseGeocode(location: location) { [weak self] address in
+                let result: LocationResult = .success(
+                    longitude: location.coordinate.longitude,
+                    latitude: location.coordinate.latitude,
+                    address: address
+                )
+
+                DispatchQueue.main.async {
+                    self?.lastResult = result
+                }
+            }
+
+            // 精度足够好，停止更新
+            if location.horizontalAccuracy <= 20 {
+                manager.stopUpdatingLocation()
+                locationCompletion = nil
+                DispatchQueue.main.async {
+                    self.isLocating = false
+                }
             }
         }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // 如果已经回调过结果，忽略这个错误（可能只是 GPS 信号丢失）
+        guard !hasDeliveredFirstResult else { return }
+
+        // 如果有缓存结果，使用缓存
+        if let cached = bestLocation {
+            invalidateTimer()
+            manager.stopUpdatingLocation()
+            reverseGeocode(location: cached) { [weak self] address in
+                let result: LocationResult = .success(
+                    longitude: cached.coordinate.longitude,
+                    latitude: cached.coordinate.latitude,
+                    address: address
+                )
+                DispatchQueue.main.async { [weak self] in
+                    self?.isLocating = false
+                    self?.lastResult = result
+                    self?.locationCompletion?(result)
+                    self?.locationCompletion = nil
+                }
+            }
+            return
+        }
+
         invalidateTimer()
         manager.stopUpdatingLocation()
 
@@ -379,28 +456,72 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     /// 发起定位
     private func startLocating(completion: @escaping (LocationResult) -> Void) {
         locationCompletion = completion
+        hasDeliveredFirstResult = false
 
         DispatchQueue.main.async { [weak self] in
             self?.isLocating = true
         }
 
-        // iOS 14+ 使用 requestLocation 单次定位
-        manager.requestLocation()
+        // 如果有缓存的上次定位结果，先立即使用
+        if let cached = bestLocation,
+           cached.timestamp.timeIntervalSinceNow > -300 { // 5分钟内的缓存可用
+            hasDeliveredFirstResult = true
+            reverseGeocode(location: cached) { [weak self] address in
+                let result: LocationResult = .success(
+                    longitude: cached.coordinate.longitude,
+                    latitude: cached.coordinate.latitude,
+                    address: address
+                )
+                DispatchQueue.main.async {
+                    self?.lastResult = result
+                    self?.locationCompletion?(result)
+                }
+            }
+        }
 
-        // 启动超时计时器
+        // 使用持续定位而不是单次定位，室内/车内更可靠
+        manager.startUpdatingLocation()
+
+        // 启动超时计时器（比原来更长，因为室内定位可能更慢）
         timeoutTimer = Timer.scheduledTimer(
             withTimeInterval: timeoutInterval,
             repeats: false
         ) { [weak self] _ in
             guard let self = self else { return }
-            self.manager.stopUpdatingLocation()
 
-            let result: LocationResult = .failure(error: .timeout)
-            DispatchQueue.main.async {
-                self.isLocating = false
-                self.lastResult = result
-                self.locationCompletion?(result)
+            // 如果已经回调过结果，超时就不报错了
+            if self.hasDeliveredFirstResult {
+                self.manager.stopUpdatingLocation()
                 self.locationCompletion = nil
+                DispatchQueue.main.async {
+                    self.isLocating = false
+                }
+            } else if let cached = self.bestLocation {
+                // 超时但有缓存，使用缓存结果
+                self.manager.stopUpdatingLocation()
+                self.reverseGeocode(location: cached) { [weak self] address in
+                    let result: LocationResult = .success(
+                        longitude: cached.coordinate.longitude,
+                        latitude: cached.coordinate.latitude,
+                        address: address
+                    )
+                    DispatchQueue.main.async {
+                        self?.isLocating = false
+                        self?.lastResult = result
+                        self?.locationCompletion?(result)
+                        self?.locationCompletion = nil
+                    }
+                }
+            } else {
+                // 真正超时，无结果
+                self.manager.stopUpdatingLocation()
+                let result: LocationResult = .failure(error: .timeout)
+                DispatchQueue.main.async {
+                    self.isLocating = false
+                    self.lastResult = result
+                    self.locationCompletion?(result)
+                    self.locationCompletion = nil
+                }
             }
         }
     }
