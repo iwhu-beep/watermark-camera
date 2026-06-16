@@ -26,6 +26,7 @@ struct ContentView: View {
     // 非持久化UI状态
     @State private var isCapturing: Bool = false
     @State private var showSettings: Bool = false
+    @State private var showWatermarkTool: Bool = false
     @State private var showLocationPermissionAlert: Bool = false
     @State private var showUploadResult: Bool = false
     @State private var uploadResultMessage: String = ""
@@ -120,6 +121,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView().environmentObject(settings)
+        }
+        .sheet(isPresented: $showWatermarkTool) {
+            WatermarkToolView().environmentObject(settings)
         }
         .alert("上传结果", isPresented: $showUploadResult) {
             Button("确定", role: .cancel) {}
@@ -575,6 +579,18 @@ struct ContentView: View {
                 .frame(width: 60, height: 60)
             }
 
+            // 水印工具
+            Button(action: { showWatermarkTool = true }) {
+                VStack(spacing: 2) {
+                    Image(systemName: "text.badge.plus")
+                        .font(.system(size: 22))
+                    Text("水印")
+                        .font(.system(size: 10))
+                }
+                .foregroundColor(.white)
+                .frame(width: 60, height: 60)
+            }
+
             Spacer()
 
             // 中：快门/录制按钮
@@ -588,7 +604,7 @@ struct ContentView: View {
 
             Spacer()
 
-            // 右：水印（打开设置）
+            // 右：设置
             Button(action: { showSettings = true }) {
                 VStack(spacing: 2) {
                     Image(systemName: "text.bubble.fill")
