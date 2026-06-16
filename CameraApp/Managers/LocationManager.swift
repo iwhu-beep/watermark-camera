@@ -232,14 +232,14 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     /// - Parameter format: 坐标格式（十进制度 / 度分秒）
     /// - Returns: 格式化后的坐标字符串
     func formatCoordinate(format: CoordinateFormat) -> String {
-        guard case .success(let lon, let lat) = lastResult else {
+        guard case .success(let lon, let lat, _) = lastResult else {
             return "经度：--- 纬度：---"
         }
 
         switch format {
         case .decimal:
-            let lonStr = String(format: "%.6f°%@", abs(lon), lon >= 0 ? "E" : "W")
-            let latStr = String(format: "%.6f°%@", abs(lat), lat >= 0 ? "N" : "S")
+            let lonStr = String(format: "%.6f\u{00b0}%@", abs(lon), lon >= 0 ? "E" : "W")
+            let latStr = String(format: "%.6f\u{00b0}%@", abs(lat), lat >= 0 ? "N" : "S")
             return "经度：\(lonStr) 纬度：\(latStr)"
 
         case .dms:
