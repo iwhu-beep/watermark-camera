@@ -23,7 +23,7 @@ struct ContentView: View {
 
     // MARK: - UI状态
 
-    @State private var noteText: String = ""
+    // 非持久化UI状态
     @State private var isCapturing: Bool = false
     @State private var showSettings: Bool = false
     @State private var showLocationPermissionAlert: Bool = false
@@ -31,21 +31,8 @@ struct ContentView: View {
     @State private var uploadResultMessage: String = ""
     @State private var showNoteInput: Bool = false
     @State private var recordingStartTime: Date? = nil
-
-    // 自定义时间
-    @State private var useCustomTime: Bool = false
-    @State private var customTime: Date = Date()
     @State private var showTimePicker: Bool = false
-
-    // 自定义经纬度
-    @State private var useCustomCoord: Bool = false
-    @State private var customLongitude: Double = 116.407400
-    @State private var customLatitude: Double = 39.904200
-    @State private var customAddress: String = ""
     @State private var showCoordPicker: Bool = false
-
-    // 延迟拍摄
-    @State private var delaySeconds: Int = 0
     @State private var countdownRemaining: Int = 0
     @State private var isCountingDown: Bool = false
 
@@ -53,9 +40,6 @@ struct ContentView: View {
     @State private var currentLongitude: String = "---"
     @State private var currentLatitude: String = "---"
     @State private var currentAddress: String = "定位中..."
-
-    // 相机模式
-    @State private var cameraMode: CameraMode = .photo
 
     // MARK: - 视图主体
 
@@ -188,40 +172,40 @@ struct ContentView: View {
 
             // 延迟拍摄选择
             Menu {
-                Button(action: { delaySeconds = 0 }) {
+                Button(action: { settings.delaySeconds = 0 }) {
                     HStack {
                         Text("关闭")
-                        if delaySeconds == 0 { Image(systemName: "checkmark") }
+                        if settings.delaySeconds == 0 { Image(systemName: "checkmark") }
                     }
                 }
-                Button(action: { delaySeconds = 3 }) {
+                Button(action: { settings.delaySeconds = 3 }) {
                     HStack {
                         Text("3秒")
-                        if delaySeconds == 3 { Image(systemName: "checkmark") }
+                        if settings.delaySeconds == 3 { Image(systemName: "checkmark") }
                     }
                 }
-                Button(action: { delaySeconds = 5 }) {
+                Button(action: { settings.delaySeconds = 5 }) {
                     HStack {
                         Text("5秒")
-                        if delaySeconds == 5 { Image(systemName: "checkmark") }
+                        if settings.delaySeconds == 5 { Image(systemName: "checkmark") }
                     }
                 }
-                Button(action: { delaySeconds = 10 }) {
+                Button(action: { settings.delaySeconds = 10 }) {
                     HStack {
                         Text("10秒")
-                        if delaySeconds == 10 { Image(systemName: "checkmark") }
+                        if settings.delaySeconds == 10 { Image(systemName: "checkmark") }
                     }
                 }
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "timer")
                         .font(.system(size: 18, weight: .medium))
-                    if delaySeconds > 0 {
-                        Text("\(delaySeconds)s")
+                    if settings.delaySeconds > 0 {
+                        Text("\(settings.delaySeconds)s")
                             .font(.system(size: 12, weight: .bold))
                     }
                 }
-                .foregroundColor(delaySeconds > 0 ? .yellow : .white)
+                .foregroundColor(settings.delaySeconds > 0 ? .yellow : .white)
                 .frame(width: 50, height: 44)
             }
 
@@ -255,8 +239,8 @@ struct ContentView: View {
             let timeStr = {
                 let f = DateFormatter()
                 f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-                if useCustomTime {
-                    return f.string(from: customTime) + " (自定义)"
+                if settings.useCustomTime {
+                    return f.string(from: settings.customTime) + " (自定义)"
                 } else {
                     return f.string(from: context.date)
                 }
@@ -267,8 +251,8 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     Text("经度：")
                         .foregroundColor(.white.opacity(0.8))
-                    Text(useCustomCoord ? String(format: "%.6f", customLongitude) : currentLongitude)
-                        .foregroundColor(useCustomCoord ? .green : .white)
+                    Text(settings.useCustomCoord ? String(format: "%.6f", customLongitude) : currentLongitude)
+                        .foregroundColor(settings.useCustomCoord ? .green : .white)
                         .lineLimit(1)
                 }
                 .font(.system(size: 15, weight: .medium))
@@ -277,8 +261,8 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     Text("纬度：")
                         .foregroundColor(.white.opacity(0.8))
-                    Text(useCustomCoord ? String(format: "%.6f", customLatitude) : currentLatitude)
-                        .foregroundColor(useCustomCoord ? .green : .white)
+                    Text(settings.useCustomCoord ? String(format: "%.6f", customLatitude) : currentLatitude)
+                        .foregroundColor(settings.useCustomCoord ? .green : .white)
                         .lineLimit(1)
                 }
                 .font(.system(size: 15, weight: .medium))
@@ -289,7 +273,7 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     Text("地址：")
                         .foregroundColor(.white.opacity(0.8))
-                    if useCustomCoord && !customAddress.isEmpty {
+                    if settings.useCustomCoord && !customAddress.isEmpty {
                         Text(customAddress)
                             .foregroundColor(.green)
                             .lineLimit(1)
@@ -300,9 +284,9 @@ struct ContentView: View {
                     }
                     Spacer()
                     Button(action: { showCoordPicker = true }) {
-                        Image(systemName: useCustomCoord ? "location.fill" : "location")
+                        Image(systemName: settings.useCustomCoord ? "location.fill" : "location")
                             .font(.system(size: 14))
-                            .foregroundColor(useCustomCoord ? .green : .white.opacity(0.7))
+                            .foregroundColor(settings.useCustomCoord ? .green : .white.opacity(0.7))
                     }
                 }
                 .font(.system(size: 15, weight: .medium))
@@ -312,13 +296,13 @@ struct ContentView: View {
                     Text("时间：")
                         .foregroundColor(.white.opacity(0.8))
                     Text(timeStr)
-                        .foregroundColor(useCustomTime ? .yellow : .white)
+                        .foregroundColor(settings.useCustomTime ? .yellow : .white)
                         .lineLimit(1)
                     Spacer()
                     Button(action: { showTimePicker = true }) {
-                        Image(systemName: useCustomTime ? "clock.badge.checkmark" : "clock")
+                        Image(systemName: settings.useCustomTime ? "clock.badge.checkmark" : "clock")
                             .font(.system(size: 14))
-                            .foregroundColor(useCustomTime ? .yellow : .white.opacity(0.7))
+                            .foregroundColor(settings.useCustomTime ? .yellow : .white.opacity(0.7))
                     }
                 }
                 .font(.system(size: 15, weight: .medium))
@@ -327,14 +311,14 @@ struct ContentView: View {
                     Text("备注：")
                         .foregroundColor(.white.opacity(0.8))
                     if showNoteInput {
-                        TextField("输入备注...", text: $noteText)
+                        TextField("输入备注...", text: $settings.noteText)
                             .foregroundColor(.white)
                             .tint(.white)
                             .font(.system(size: 15, weight: .medium))
                             .onSubmit { showNoteInput = false }
                     } else {
-                        Text(noteText.isEmpty ? "点击添加" : noteText)
-                            .foregroundColor(noteText.isEmpty ? .white.opacity(0.5) : .white)
+                        Text(settings.noteText.isEmpty ? "点击添加" : settings.noteText)
+                            .foregroundColor(settings.noteText.isEmpty ? .white.opacity(0.5) : .white)
                             .onTapGesture { showNoteInput = true }
                     }
                 }
@@ -359,13 +343,13 @@ struct ContentView: View {
     private var timePickerSheet: some View {
         NavigationView {
             VStack(spacing: 20) {
-                Toggle("使用自定义时间", isOn: $useCustomTime)
+                Toggle("使用自定义时间", isOn: $settings.useCustomTime)
                     .padding(.horizontal)
 
-                if useCustomTime {
+                if settings.useCustomTime {
                     DatePicker(
                         "选择时间",
-                        selection: $customTime,
+                        selection: $settings.customTime,
                         displayedComponents: [.date, .hourAndMinute]
                     )
                     .datePickerStyle(.wheel)
@@ -374,7 +358,7 @@ struct ContentView: View {
 
                     DatePicker(
                         "选择时间",
-                        selection: $customTime,
+                        selection: $settings.customTime,
                         displayedComponents: .date
                     )
                     .datePickerStyle(.graphical)
@@ -382,8 +366,8 @@ struct ContentView: View {
                 }
 
                 Button("恢复为当前时间") {
-                    useCustomTime = false
-                    customTime = Date()
+                    settings.useCustomTime = false
+                    settings.customTime = Date()
                 }
                 .foregroundColor(.blue)
 
@@ -405,20 +389,20 @@ struct ContentView: View {
     private var coordPickerSheet: some View {
         NavigationView {
             VStack(spacing: 16) {
-                Toggle("使用自定义经纬度", isOn: $useCustomCoord)
+                Toggle("使用自定义经纬度", isOn: $settings.useCustomCoord)
                     .padding(.horizontal)
 
-                if useCustomCoord {
+                if settings.useCustomCoord {
                     // 经度输入
                     VStack(alignment: .leading, spacing: 4) {
                         Text("经度 (Longitude)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         HStack {
-                            TextField("例如: 118.765432", value: $customLongitude, format: .number)
+                            TextField("例如: 118.765432", value: $settings.customLongitude, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .keyboardType(.decimalPad)
-                            Stepper("", value: $customLongitude, in: -180...180, step: 0.001)
+                            Stepper("", value: $settings.customLongitude, in: -180...180, step: 0.001)
                                 .labelsHidden()
                         }
                         .padding(.horizontal)
@@ -430,10 +414,10 @@ struct ContentView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                         HStack {
-                            TextField("例如: 33.456789", value: $customLatitude, format: .number)
+                            TextField("例如: 33.456789", value: $settings.customLatitude, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .keyboardType(.decimalPad)
-                            Stepper("", value: $customLatitude, in: -90...90, step: 0.001)
+                            Stepper("", value: $settings.customLatitude, in: -90...90, step: 0.001)
                                 .labelsHidden()
                         }
                         .padding(.horizontal)
@@ -444,7 +428,7 @@ struct ContentView: View {
                         Text("自定义地址（可选）")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        TextField("例如: 泗洪县古徐广场", text: $customAddress)
+                        TextField("例如: 泗洪县古徐广场", text: $settings.customAddress)
                             .textFieldStyle(.roundedBorder)
                             .padding(.horizontal)
                     }
@@ -473,10 +457,10 @@ struct ContentView: View {
                     // 使用当前GPS坐标
                     Button("使用当前GPS坐标") {
                         if currentLongitude != "---" {
-                            customLongitude = Double(currentLongitude) ?? customLongitude
+                            customLongitude = Double(currentLongitude) ?? settings.customLongitude
                         }
                         if currentLatitude != "---" {
-                            customLatitude = Double(currentLatitude) ?? customLatitude
+                            customLatitude = Double(currentLatitude) ?? settings.customLatitude
                         }
                         customAddress = currentAddress
                     }
@@ -484,7 +468,7 @@ struct ContentView: View {
                 }
 
                 Button("恢复为GPS定位") {
-                    useCustomCoord = false
+                    settings.useCustomCoord = false
                     customAddress = ""
                 }
                 .foregroundColor(.red)
@@ -519,11 +503,11 @@ struct ContentView: View {
         HStack(spacing: 0) {
             ForEach(CameraMode.allCases, id: \.self) { mode in
                 Button(action: {
-                    if !camera.isRecording { cameraMode = mode }
+                    if !camera.isRecording { settings.cameraMode = mode }
                 }) {
                     Text(mode.rawValue)
-                        .font(.system(size: 15, weight: cameraMode == mode ? .bold : .regular))
-                        .foregroundColor(cameraMode == mode ? .orange : .white.opacity(0.7))
+                        .font(.system(size: 15, weight: settings.cameraMode == mode ? .bold : .regular))
+                        .foregroundColor(settings.cameraMode == mode ? .orange : .white.opacity(0.7))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                 }
@@ -555,7 +539,7 @@ struct ContentView: View {
 
             // 中：快门/录制按钮
             Group {
-                if cameraMode == .photo {
+                if settings.cameraMode == .photo {
                     shutterButton
                 } else {
                     recordButton
@@ -636,7 +620,7 @@ struct ContentView: View {
     private func capturePhoto() {
         guard !isCapturing, !isCountingDown, camera.isReady else { return }
 
-        if delaySeconds > 0 {
+        if settings.delaySeconds > 0 {
             startCountdown(delaySeconds) {
                 isCapturing = true
                 camera.capturePhoto()
@@ -689,11 +673,11 @@ struct ContentView: View {
         var lines: [String] = []
 
         // 使用自定义经纬度或GPS定位
-        let displayLon = useCustomCoord ? String(format: "%.6f", customLongitude) : currentLongitude
-        let displayLat = useCustomCoord ? String(format: "%.6f", customLatitude) : currentLatitude
+        let displayLon = settings.useCustomCoord ? String(format: "%.6f", customLongitude) : currentLongitude
+        let displayLat = settings.useCustomCoord ? String(format: "%.6f", customLatitude) : currentLatitude
         let displayAddr: String
-        if useCustomCoord && !customAddress.isEmpty {
-            displayAddr = customAddress
+        if settings.useCustomCoord && !customAddress.isEmpty {
+            displayAddr = settings.customAddress
         } else {
             displayAddr = currentAddress
         }
@@ -705,10 +689,10 @@ struct ContentView: View {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd HH:mm:ss"
         // 使用自定义时间或当前时间
-        let displayTime = useCustomTime ? customTime : Date()
+        let displayTime = settings.useCustomTime ? settings.customTime : Date()
         lines.append("时间：\(f.string(from: displayTime))")
-        if !noteText.isEmpty {
-            lines.append("备注：\(noteText)")
+        if !settings.noteText.isEmpty {
+            lines.append("备注：\(settings.noteText)")
         }
         return lines
     }
@@ -797,7 +781,7 @@ struct ContentView: View {
     private func uploadImage(_ image: UIImage) {
         BaiduUploader.shared.uploadImage(
             image,
-            fileNamePrefix: noteText.isEmpty ? nil : noteText,
+            fileNamePrefix: settings.noteText.isEmpty ? nil : settings.noteText,
             onProgress: { progress in print("[Baidu] 上传: \(Int(progress * 100))%") },
             onSuccess: {
                 uploadResultMessage = "已上传到百度网盘"
@@ -813,7 +797,7 @@ struct ContentView: View {
     private func uploadVideo(_ url: URL) {
         BaiduUploader.shared.uploadVideo(
             url,
-            fileNamePrefix: noteText.isEmpty ? nil : noteText,
+            fileNamePrefix: settings.noteText.isEmpty ? nil : settings.noteText,
             onProgress: { progress in print("[Baidu] 上传: \(Int(progress * 100))%") },
             onSuccess: {
                 uploadResultMessage = "视频已上传到百度网盘"

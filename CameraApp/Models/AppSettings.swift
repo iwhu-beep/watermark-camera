@@ -58,6 +58,52 @@ class AppSettings: ObservableObject {
         didSet { defaults.set(watermarkVerticalPosition, forKey: "watermarkVerticalPosition") }
     }
 
+    // MARK: 备注
+
+    @Published var noteText: String {
+        didSet { defaults.set(noteText, forKey: "noteText") }
+    }
+
+    // MARK: 自定义时间
+
+    @Published var useCustomTime: Bool {
+        didSet { defaults.set(useCustomTime, forKey: "useCustomTime") }
+    }
+
+    @Published var customTime: Date {
+        didSet { defaults.set(customTime, forKey: "customTime") }
+    }
+
+    // MARK: 自定义经纬度
+
+    @Published var useCustomCoord: Bool {
+        didSet { defaults.set(useCustomCoord, forKey: "useCustomCoord") }
+    }
+
+    @Published var customLongitude: Double {
+        didSet { defaults.set(customLongitude, forKey: "customLongitude") }
+    }
+
+    @Published var customLatitude: Double {
+        didSet { defaults.set(customLatitude, forKey: "customLatitude") }
+    }
+
+    @Published var customAddress: String {
+        didSet { defaults.set(customAddress, forKey: "customAddress") }
+    }
+
+    // MARK: 延迟拍摄
+
+    @Published var delaySeconds: Int {
+        didSet { defaults.set(delaySeconds, forKey: "delaySeconds") }
+    }
+
+    // MARK: 相机模式
+
+    @Published var cameraMode: CameraMode {
+        didSet { defaults.set(cameraMode.rawValue, forKey: "cameraMode") }
+    }
+
     // MARK: - 初始化（从UserDefaults读取已保存的设置）
 
     init() {
@@ -75,5 +121,31 @@ class AppSettings: ObservableObject {
         let fontSize = defaults.double(forKey: "watermarkFontSize")
         self.watermarkFontSize = fontSize > 0 ? CGFloat(fontSize) : 24
         self.watermarkVerticalPosition = defaults.object(forKey: "watermarkVerticalPosition") as? Double ?? 0.15
+
+        // 备注
+        self.noteText = defaults.string(forKey: "noteText") ?? ""
+
+        // 自定义时间
+        self.useCustomTime = defaults.bool(forKey: "useCustomTime")
+        self.customTime = defaults.object(forKey: "customTime") as? Date ?? Date()
+
+        // 自定义经纬度
+        self.useCustomCoord = defaults.bool(forKey: "useCustomCoord")
+        let savedLon = defaults.double(forKey: "customLongitude")
+        self.customLongitude = savedLon != 0 ? savedLon : 116.407400
+        let savedLat = defaults.double(forKey: "customLatitude")
+        self.customLatitude = savedLat != 0 ? savedLat : 39.904200
+        self.customAddress = defaults.string(forKey: "customAddress") ?? ""
+
+        // 延迟拍摄
+        self.delaySeconds = defaults.integer(forKey: "delaySeconds")
+
+        // 相机模式
+        if let modeRaw = defaults.string(forKey: "cameraMode"),
+           let mode = CameraMode(rawValue: modeRaw) {
+            self.cameraMode = mode
+        } else {
+            self.cameraMode = .photo
+        }
     }
 }
