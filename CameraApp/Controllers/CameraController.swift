@@ -102,6 +102,7 @@ class CameraController: ObservableObject {
     @Published var isRecording: Bool = false
     @Published var flashMode: FlashMode = .auto
     @Published var currentCameraPosition: AVCaptureDevice.Position = .back
+    @Published var zoomFactor: CGFloat = 1.0
 
     // MARK: 私有属性
 
@@ -119,6 +120,9 @@ class CameraController: ObservableObject {
     private var currentPhotoDelegate: PhotoCaptureDelegate?
     private let videoDelegate = VideoDataDelegate()
     private let videoRecorder = VideoRecorder()
+
+    /// 缩放开始时的基准倍数
+    private var zoomBeginFactor: CGFloat = 1.0
 
     var watermarkProvider: (() -> String)?
 
@@ -231,6 +235,48 @@ class CameraController: ObservableObject {
     func cycleFlashMode() {
         flashMode = flashMode.next
         print("[Camera] 闪光灯: \(flashMode.rawValue)")
+    }
+
+    // MARK: - 缩放控制
+
+    /// 获取当前相机的最大缩放倍数
+    var maxZoomFactor: CGFloat {
+        guard let device = currentVideoInput?.device else { return 1.0 }
+        return min(device.activeFormat.videoMaxZoomFactor, 10.0) // 限制最大10倍
+    }
+
+    /// 获取最小缩放倍数
+    var minZoomFactor: CGFloat {
+        return 1.0
+    }
+
+    /// 开始缩放手势（记录基准值）
+    func zoomBegin() {
+        zoomBeginFactor = zoomFactor
+    }
+
+    /// 更新缩放倍数
+    /// - Parameter scale: 手势缩放比例（pinch.scale）
+    func zoomUpdate(scale: CGFloat) {
+        let newFactor = zoomBeginFactor * scale
+        let clampedFactor = min(max(newFactor, minZoomFactor), maxZoomFactor)
+        setZoom(factor: clampedFactor)
+    }
+
+    /// 设置缩放倍数
+    private func setZoom(factor: CGFloat) {
+        guard let device = currentVideoInput?.device else { return }
+
+        do {
+            try device.lockForConfiguration()
+            device.videoZoomFactor = factor
+            device.unlockForConfiguration()
+            DispatchQueue.main.async {
+                self.zoomFactor = factor
+            }
+        } catch {
+            print("[Camera] 设置缩放失败: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - 拍照

@@ -48,9 +48,31 @@ struct ContentView: View {
             // 全屏相机预览
             CameraPreviewView(session: camera.session)
                 .ignoresSafeArea()
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { scale in
+                            camera.zoomUpdate(scale: scale)
+                        }
+                        .onEnded { _ in
+                            // 缩放结束，保持当前倍数
+                        }
+                )
+                .simultaneousGesture(
+                    TapGesture(count: 2).onEnded {
+                        // 双击重置缩放
+                        camera.zoomBegin()
+                        camera.zoomUpdate(scale: 1.0 / camera.zoomFactor)
+                    }
+                )
 
             VStack {
                 topToolBar
+
+                // 缩放指示器
+                if camera.zoomFactor > 1.05 {
+                    zoomIndicator
+                        .transition(.opacity)
+                }
 
                 // 倒计时显示
                 if isCountingDown {
@@ -71,6 +93,7 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: camera.isRecording)
+        .animation(.easeInOut(duration: 0.15), value: camera.zoomFactor)
         .navigationBarHidden(true)
         .statusBar(hidden: true)
         .onAppear {
@@ -127,6 +150,23 @@ struct ContentView: View {
                 .foregroundColor(.white)
         }
         .padding(.top, 20)
+    }
+
+    // MARK: - 缩放指示器
+
+    private var zoomIndicator: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "plus.magnifyingglass")
+                .font(.system(size: 14))
+            Text(String(format: "%.1fx", camera.zoomFactor))
+                .font(.system(size: 16, weight: .bold, design: .monospaced))
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.6))
+        .cornerRadius(20)
+        .padding(.top, 8)
     }
 
     // MARK: - 录像指示器
