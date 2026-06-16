@@ -37,6 +37,13 @@ struct ContentView: View {
     @State private var customTime: Date = Date()
     @State private var showTimePicker: Bool = false
 
+    // 自定义经纬度
+    @State private var useCustomCoord: Bool = false
+    @State private var customLongitude: Double = 116.407400
+    @State private var customLatitude: Double = 39.904200
+    @State private var customAddress: String = ""
+    @State private var showCoordPicker: Bool = false
+
     // 延迟拍摄
     @State private var delaySeconds: Int = 0
     @State private var countdownRemaining: Int = 0
@@ -256,10 +263,49 @@ struct ContentView: View {
             }()
 
             VStack(alignment: .leading, spacing: 6) {
-                infoRow(label: "经度", value: currentLongitude)
-                infoRow(label: "纬度", value: currentLatitude)
+                // 经度行（可自定义）
+                HStack(spacing: 4) {
+                    Text("经度：")
+                        .foregroundColor(.white.opacity(0.8))
+                    Text(useCustomCoord ? String(format: "%.6f", customLongitude) : currentLongitude)
+                        .foregroundColor(useCustomCoord ? .green : .white)
+                        .lineLimit(1)
+                }
+                .font(.system(size: 15, weight: .medium))
+
+                // 纬度行（可自定义）
+                HStack(spacing: 4) {
+                    Text("纬度：")
+                        .foregroundColor(.white.opacity(0.8))
+                    Text(useCustomCoord ? String(format: "%.6f", customLatitude) : currentLatitude)
+                        .foregroundColor(useCustomCoord ? .green : .white)
+                        .lineLimit(1)
+                }
+                .font(.system(size: 15, weight: .medium))
+
                 infoRow(label: "坐标", value: "WGS84 坐标系")
-                infoRow(label: "地址", value: currentAddress)
+
+                // 地址行
+                HStack(spacing: 4) {
+                    Text("地址：")
+                        .foregroundColor(.white.opacity(0.8))
+                    if useCustomCoord && !customAddress.isEmpty {
+                        Text(customAddress)
+                            .foregroundColor(.green)
+                            .lineLimit(1)
+                    } else {
+                        Text(currentAddress)
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Button(action: { showCoordPicker = true }) {
+                        Image(systemName: useCustomCoord ? "location.fill" : "location")
+                            .font(.system(size: 14))
+                            .foregroundColor(useCustomCoord ? .green : .white.opacity(0.7))
+                    }
+                }
+                .font(.system(size: 15, weight: .medium))
 
                 // 时间行（可点击设置自定义时间）
                 HStack(spacing: 4) {
@@ -301,6 +347,9 @@ struct ContentView: View {
             .padding(.horizontal, 12)
             .sheet(isPresented: $showTimePicker) {
                 timePickerSheet
+            }
+            .sheet(isPresented: $showCoordPicker) {
+                coordPickerSheet
             }
         }
     }
@@ -346,6 +395,108 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { showTimePicker = false }
+                }
+            }
+        }
+    }
+
+    // MARK: - 经纬度设置弹窗
+
+    private var coordPickerSheet: some View {
+        NavigationView {
+            VStack(spacing: 16) {
+                Toggle("使用自定义经纬度", isOn: $useCustomCoord)
+                    .padding(.horizontal)
+
+                if useCustomCoord {
+                    // 经度输入
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("经度 (Longitude)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack {
+                            TextField("例如: 118.765432", value: $customLongitude, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .keyboardType(.decimalPad)
+                            Stepper("", value: $customLongitude, in: -180...180, step: 0.001)
+                                .labelsHidden()
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // 纬度输入
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("纬度 (Latitude)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack {
+                            TextField("例如: 33.456789", value: $customLatitude, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .keyboardType(.decimalPad)
+                            Stepper("", value: $customLatitude, in: -90...90, step: 0.001)
+                                .labelsHidden()
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // 自定义地址
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("自定义地址（可选）")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField("例如: 泗洪县古徐广场", text: $customAddress)
+                            .textFieldStyle(.roundedBorder)
+                            .padding(.horizontal)
+                    }
+
+                    // 显示当前设置的坐标
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("预览")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("经度: \(String(format: "%.6f", customLongitude))")
+                            .font(.system(.caption, design: .monospaced))
+                        Text("纬度: \(String(format: "%.6f", customLatitude))")
+                            .font(.system(.caption, design: .monospaced))
+                        if !customAddress.isEmpty {
+                            Text("地址: \(customAddress)")
+                                .font(.system(.caption, design: .monospaced))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(8)
+                    .padding(.horizontal)
+
+                    // 使用当前GPS坐标
+                    Button("使用当前GPS坐标") {
+                        if currentLongitude != "---" {
+                            customLongitude = Double(currentLongitude) ?? customLongitude
+                        }
+                        if currentLatitude != "---" {
+                            customLatitude = Double(currentLatitude) ?? customLatitude
+                        }
+                        customAddress = currentAddress
+                    }
+                    .foregroundColor(.blue)
+                }
+
+                Button("恢复为GPS定位") {
+                    useCustomCoord = false
+                    customAddress = ""
+                }
+                .foregroundColor(.red)
+
+                Spacer()
+            }
+            .padding(.top)
+            .navigationTitle("设置经纬度")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") { showCoordPicker = false }
                 }
             }
         }
@@ -536,10 +687,21 @@ struct ContentView: View {
     /// 构建水印行数组（与界面信息叠加层一致）
     private func buildWatermarkLines() -> [String] {
         var lines: [String] = []
-        lines.append("经度：\(currentLongitude)")
-        lines.append("纬度：\(currentLatitude)")
+
+        // 使用自定义经纬度或GPS定位
+        let displayLon = useCustomCoord ? String(format: "%.6f", customLongitude) : currentLongitude
+        let displayLat = useCustomCoord ? String(format: "%.6f", customLatitude) : currentLatitude
+        let displayAddr: String
+        if useCustomCoord && !customAddress.isEmpty {
+            displayAddr = customAddress
+        } else {
+            displayAddr = currentAddress
+        }
+
+        lines.append("经度：\(displayLon)")
+        lines.append("纬度：\(displayLat)")
         lines.append("坐标：WGS84 坐标系")
-        lines.append("地址：\(currentAddress)")
+        lines.append("地址：\(displayAddr)")
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd HH:mm:ss"
         // 使用自定义时间或当前时间
