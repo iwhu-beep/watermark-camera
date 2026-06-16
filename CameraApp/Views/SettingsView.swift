@@ -15,10 +15,33 @@ struct SettingsView: View {
 
     @State private var showBaiduAuth: Bool = false
     @State private var baiduLoginStatus: String = ""
+    @State private var showWatermarkTool: Bool = false
 
     var body: some View {
         NavigationView {
             Form {
+                // ========== 工具 ==========
+                Section {
+                    Button(action: { showWatermarkTool = true }) {
+                        HStack {
+                            Image(systemName: "text.badge.plus")
+                                .foregroundColor(.blue)
+                            Text("水印工具")
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("工具")
+                } footer: {
+                    Text("选择已有图片，添加自定义水印数据")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
                 // ========== 上传设置 ==========
                 Section {
                     Toggle("自动上传到百度网盘", isOn: $settings.autoUpload)
@@ -150,6 +173,9 @@ struct SettingsView: View {
                 BaiduAuthView { success, message in
                     baiduLoginStatus = message
                 }
+            }
+            .sheet(isPresented: $showWatermarkTool) {
+                WatermarkToolView().environmentObject(settings)
             }
         }
     }
