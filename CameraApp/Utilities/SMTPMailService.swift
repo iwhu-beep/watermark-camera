@@ -43,7 +43,7 @@ final class SMTPMailService {
                 hostname: host,
                 email: user,
                 password: password,
-                port: port,
+                port: Int32(port),
                 tlsMode: .requireSTARTTLS,
                 tlsConfiguration: nil,
                 authMethods: [],
@@ -55,7 +55,7 @@ final class SMTPMailService {
                 hostname: host,
                 email: user,
                 password: password,
-                port: port,
+                port: Int32(port),
                 tlsMode: .ignoreTLS,
                 tlsConfiguration: nil,
                 authMethods: [],
@@ -67,10 +67,7 @@ final class SMTPMailService {
         // 构建附件
         var mailAttachments: [Attachment] = []
         for url in attachments {
-            let attachment = Attachment(
-                filePath: url.path,
-                mimeType: url.pathExtension == "zip" ? "application/zip" : "application/octet-stream"
-            )
+            let attachment = Attachment(filePath: url.path)
             mailAttachments.append(attachment)
         }
 
