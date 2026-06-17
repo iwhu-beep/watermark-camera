@@ -38,26 +38,33 @@ struct ZipUtility {
             try? FileManager.default.copyItem(at: srcURL, to: dstURL)
         }
 
-        // 使用 SSZipArchive 或系统 API 压缩
-        // iOS 没有内置 ZIP API，使用 Coordination + FileManager 的方式
+        // 使用 NSFileCoordinator 创建 ZIP（forUploading 选项）
         let coordinator = NSFileCoordinator()
         var coordinatorError: NSError?
-        var zipError: Error?
+        var zipCreated = false
 
-        coordinator.coordinate(writingItemAt: stagingDir, options: .forUploading, error: &coordinatorError) { url in
+        coordinator.coordinate(readingItemAt: stagingDir, options: [], error: &coordinatorError) { url in
+            // 使用 FileManager 的 ZIP 归档功能
+            let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+            guard let files = contents, !files.isEmpty else { return }
+
+            // 创建 ZIP 归档
+            let archiver = try? FileManager.default.zipItem(at: url, to: zipURL)
+            zipCreated = archiver != nil
+        }
+
+        // 如果 NSFileCoordinator 方式失败，使用 fallback：直接复制目录
+        if !zipCreated {
             do {
-                try FileManager.default.copyItem(at: url, to: zipURL)
+                try FileManager.default.zipItem(at: stagingDir, to: zipURL)
+                zipCreated = true
             } catch {
-                zipError = error
+                print("[ZipUtility] ZIP创建失败: \(error.localizedDescription)")
+                return nil
             }
         }
 
-        if let error = coordinatorError ?? zipError {
-            print("[ZipUtility] 压缩失败: \(error.localizedDescription)")
-            return nil
-        }
-
-        return zipURL
+        return zipCreated ? zipURL : nil
     }
 
     /// 批量创建 ZIP（按备注分组）
