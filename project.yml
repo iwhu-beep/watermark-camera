@@ -19,7 +19,7 @@ packages:
     from: 0.9.19
   SwiftSMTP:
     url: https://github.com/Kitura/Swift-SMTP.git
-    from: 6.1.0
+    from: 6.0.0
 
 targets:
   CameraApp:
