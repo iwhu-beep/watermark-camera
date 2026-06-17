@@ -104,6 +104,12 @@ class AppSettings: ObservableObject {
         didSet { defaults.set(cameraMode.rawValue, forKey: "cameraMode") }
     }
 
+    // MARK: 邮箱发送
+
+    @Published var recipientEmail: String {
+        didSet { defaults.set(recipientEmail, forKey: "recipientEmail") }
+    }
+
     // MARK: - 初始化（从UserDefaults读取已保存的设置）
 
     init() {
@@ -147,5 +153,8 @@ class AppSettings: ObservableObject {
         } else {
             self.cameraMode = .photo
         }
+
+        // 邮箱
+        self.recipientEmail = defaults.string(forKey: "recipientEmail") ?? ""
     }
 }

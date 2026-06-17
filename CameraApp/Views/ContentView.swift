@@ -844,6 +844,12 @@ struct ContentView: View {
 
         savePhotoToLibrary(watermarkedImage)
 
+        // 保存到本地副本（用于邮箱发送）
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        let fileName = "IMG_\(formatter.string(from: Date())).jpg"
+        PhotoStore.shared.savePhoto(image: watermarkedImage, note: settings.noteText, fileName: fileName)
+
         if settings.autoUpload {
             uploadImage(watermarkedImage)
         }
@@ -858,6 +864,9 @@ struct ContentView: View {
         }
         print("[ContentView] 视频已保存: \(url.lastPathComponent)")
         saveVideoToLibrary(url)
+
+        // 保存到本地副本（用于邮箱发送）
+        PhotoStore.shared.saveVideo(from: url, note: settings.noteText)
 
         if settings.autoUpload {
             uploadVideo(url)

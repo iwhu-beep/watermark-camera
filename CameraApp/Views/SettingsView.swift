@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import MessageUI
 
 struct SettingsView: View {
 
@@ -16,6 +17,10 @@ struct SettingsView: View {
     @State private var showBaiduAuth: Bool = false
     @State private var baiduLoginStatus: String = ""
     @State private var showWatermarkTool: Bool = false
+    @State private var showMailView: Bool = false
+    @State private var sendResult: String = ""
+    @State private var isSending: Bool = false
+    @State private var mailAttachments: [(data: Data, mimeType: String, fileName: String)] = []
 
     var body: some View {
         NavigationView {
@@ -38,6 +43,52 @@ struct SettingsView: View {
                     Text("工具")
                 } footer: {
                     Text("选择已有图片，添加自定义水印数据")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
+                // ========== 邮箱发送 ==========
+                Section {
+                    HStack {
+                        Text("收件邮箱")
+                        Spacer()
+                        TextField("example@mail.com", text: $settings.recipientEmail)
+                            .multilineTextAlignment(.trailing)
+                            .keyboardType(.emailAddress)
+                            .autocapitalization(.none)
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack {
+                        Text("今日照片")
+                        Spacer()
+                        Text("\(PhotoStore.shared.todayPhotoCount) 张")
+                            .foregroundColor(.secondary)
+                    }
+
+                    Button(action: sendTodayPhotos) {
+                        HStack {
+                            if isSending {
+                                ProgressView()
+                                    .progressViewStyle(.circular)
+                            } else {
+                                Image(systemName: "paperplane.fill")
+                            }
+                            Text("发送今日照片")
+                        }
+                        .foregroundColor(.blue)
+                    }
+                    .disabled(isSending || PhotoStore.shared.todayPhotoCount == 0)
+
+                    if !sendResult.isEmpty {
+                        Text(sendResult)
+                            .font(.caption)
+                            .foregroundColor(sendResult.contains("成功") ? .green : .orange)
+                    }
+                } header: {
+                    Text("邮箱发送")
+                } footer: {
+                    Text("将当天拍摄的照片按备注名压缩后通过邮件发送")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -177,7 +228,75 @@ struct SettingsView: View {
             .sheet(isPresented: $showWatermarkTool) {
                 WatermarkToolView().environmentObject(settings)
             }
+            .sheet(isPresented: $showMailView) {
+                MailView(
+                    recipients: [settings.recipientEmail],
+                    subject: "打卡相机照片 - \(formatDate(Date()))",
+                    body: "附件为当天拍摄的照片，按备注名分组压缩。",
+                    attachments: mailAttachments
+                ) { result in
+                    switch result {
+                    case .success:
+                        sendResult = "发送成功"
+                    case .failure(let error):
+                        sendResult = "发送失败: \(error.localizedDescription)"
+                    }
+                    // 清理临时文件
+                    ZipUtility.cleanup(zipURLs: mailAttachments.map { _ in URL(fileURLWithPath: "") })
+                }
+            }
         }
+    }
+
+    // MARK: - 发送今日照片
+
+    private func sendTodayPhotos() {
+        guard !settings.recipientEmail.isEmpty else {
+            sendResult = "请先填写收件邮箱地址"
+            return
+        }
+
+        guard canSendMail else {
+            sendResult = "设备未配置邮件账户，请在系统设置中添加邮箱"
+            return
+        }
+
+        isSending = true
+        sendResult = "正在压缩照片..."
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let groups = PhotoStore.shared.getTodayGroupedByNote()
+            let zips = ZipUtility.createZips(from: groups)
+
+            var attachments: [(data: Data, mimeType: String, fileName: String)] = []
+
+            for (note, zipURL) in zips {
+                if let data = try? Data(contentsOf: zipURL) {
+                    attachments.append((
+                        data: data,
+                        mimeType: "application/zip",
+                        fileName: zipURL.lastPathComponent
+                    ))
+                }
+            }
+
+            DispatchQueue.main.async {
+                isSending = false
+                if attachments.isEmpty {
+                    sendResult = "今天没有可发送的照片"
+                } else {
+                    mailAttachments = attachments
+                    sendResult = "已准备 \(attachments.count) 个压缩包，正在打开邮件..."
+                    showMailView = true
+                }
+            }
+        }
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
     }
 
     // MARK: - 位置标签
