@@ -7,7 +7,6 @@
 //
 
 import SwiftUI
-import MessageUI
 
 struct SettingsView: View {
 
@@ -17,10 +16,9 @@ struct SettingsView: View {
     @State private var showBaiduAuth: Bool = false
     @State private var baiduLoginStatus: String = ""
     @State private var showWatermarkTool: Bool = false
-    @State private var showMailView: Bool = false
     @State private var sendResult: String = ""
     @State private var isSending: Bool = false
-    @State private var mailAttachments: [(data: Data, mimeType: String, fileName: String)] = []
+    @State private var showSMTPConfig: Bool = false
 
     var body: some View {
         NavigationView {
@@ -66,6 +64,18 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                     }
 
+                    Button(action: { showSMTPConfig = true }) {
+                        HStack {
+                            Image(systemName: "gearshape")
+                            Text("SMTP 服务器配置")
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
                     Button(action: sendTodayPhotos) {
                         HStack {
                             if isSending {
@@ -83,12 +93,12 @@ struct SettingsView: View {
                     if !sendResult.isEmpty {
                         Text(sendResult)
                             .font(.caption)
-                            .foregroundColor(sendResult.contains("成功") ? .green : .orange)
+                            .foregroundColor(sendResult.contains("成功") ? .green : .red)
                     }
                 } header: {
                     Text("邮箱发送")
                 } footer: {
-                    Text("将当天拍摄的照片按备注名压缩后通过邮件发送")
+                    Text("将当天照片按备注名压缩为 ZIP 后通过 SMTP 发送")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -228,20 +238,8 @@ struct SettingsView: View {
             .sheet(isPresented: $showWatermarkTool) {
                 WatermarkToolView().environmentObject(settings)
             }
-            .sheet(isPresented: $showMailView) {
-                MailView(
-                    recipients: [settings.recipientEmail],
-                    subject: "打卡相机照片 - \(formatDate(Date()))",
-                    body: "附件为当天拍摄的照片，按备注名分组压缩。",
-                    attachments: mailAttachments
-                ) { result in
-                    switch result {
-                    case .success:
-                        sendResult = "发送成功"
-                    case .failure(let error):
-                        sendResult = "发送失败: \(error.localizedDescription)"
-                    }
-                }
+            .sheet(isPresented: $showSMTPConfig) {
+                SMTPConfigView().environmentObject(settings)
             }
         }
     }
@@ -253,9 +251,8 @@ struct SettingsView: View {
             sendResult = "请先填写收件邮箱地址"
             return
         }
-
-        guard canSendMail else {
-            sendResult = "设备未配置邮件账户，请在系统设置中添加邮箱"
+        guard !settings.smtpUser.isEmpty, !settings.smtpPassword.isEmpty else {
+            sendResult = "请先配置 SMTP 服务器"
             return
         }
 
@@ -264,16 +261,40 @@ struct SettingsView: View {
 
         DispatchQueue.global(qos: .userInitiated).async {
             let groups = PhotoStore.shared.getTodayGroupedByNote()
-            let attachments = ZipUtility.prepareAttachments(from: groups)
+            let zips = ZipUtility.createZips(from: groups)
 
             DispatchQueue.main.async {
-                isSending = false
-                if attachments.isEmpty {
+                if zips.isEmpty {
+                    isSending = false
                     sendResult = "今天没有可发送的照片"
-                } else {
-                    mailAttachments = attachments
-                    sendResult = "已准备 \(attachments.count) 张照片，正在打开邮件..."
-                    showMailView = true
+                    return
+                }
+
+                let zipURLs = zips.map { $0.1 }
+                let zipNames = zips.map { $0.0 }
+                sendResult = "已压缩 \(zips.count) 个文件，正在发送..."
+
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyy-MM-dd"
+                let dateStr = formatter.string(from: Date())
+                let subject = "打卡相机照片 - \(dateStr)"
+                let body = "附件为当天拍摄的照片，按备注名分组压缩。\n\n压缩包：\n\(zipNames.joined(separator: "\n"))"
+
+                SMTPMailService.sendMail(
+                    host: settings.smtpHost,
+                    port: settings.smtpPort,
+                    user: settings.smtpUser,
+                    password: settings.smtpPassword,
+                    useTLS: settings.smtpUseTLS,
+                    to: settings.recipientEmail,
+                    subject: subject,
+                    text: body,
+                    attachments: zipURLs
+                ) { success, message in
+                    self.isSending = false
+                    self.sendResult = message
+                    // 清理临时 ZIP 文件
+                    ZipUtility.cleanup(zipURLs: zipURLs)
                 }
             }
         }

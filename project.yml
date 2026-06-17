@@ -13,12 +13,23 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: "15.0"
     TARGETED_DEVICE_FAMILY: "1"
 
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: 0.9.19
+  SwiftSMTP:
+    url: https://github.com/Kitura/Swift-SMTP.git
+    from: 6.1.0
+
 targets:
   CameraApp:
     type: application
     platform: iOS
     sources:
       - path: CameraApp
+    dependencies:
+      - package: ZIPFoundation
+      - package: SwiftSMTP
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.watermarkcamera.app

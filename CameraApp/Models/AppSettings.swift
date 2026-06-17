@@ -110,6 +110,26 @@ class AppSettings: ObservableObject {
         didSet { defaults.set(recipientEmail, forKey: "recipientEmail") }
     }
 
+    @Published var smtpHost: String {
+        didSet { defaults.set(smtpHost, forKey: "smtpHost") }
+    }
+
+    @Published var smtpPort: Int {
+        didSet { defaults.set(smtpPort, forKey: "smtpPort") }
+    }
+
+    @Published var smtpUser: String {
+        didSet { defaults.set(smtpUser, forKey: "smtpUser") }
+    }
+
+    @Published var smtpPassword: String {
+        didSet { defaults.set(smtpPassword, forKey: "smtpPassword") }
+    }
+
+    @Published var smtpUseTLS: Bool {
+        didSet { defaults.set(smtpUseTLS, forKey: "smtpUseTLS") }
+    }
+
     // MARK: - 初始化（从UserDefaults读取已保存的设置）
 
     init() {
@@ -156,5 +176,11 @@ class AppSettings: ObservableObject {
 
         // 邮箱
         self.recipientEmail = defaults.string(forKey: "recipientEmail") ?? ""
+        self.smtpHost = defaults.string(forKey: "smtpHost") ?? "smtp.qq.com"
+        let savedPort = defaults.integer(forKey: "smtpPort")
+        self.smtpPort = savedPort > 0 ? savedPort : 465
+        self.smtpUser = defaults.string(forKey: "smtpUser") ?? ""
+        self.smtpPassword = defaults.string(forKey: "smtpPassword") ?? ""
+        self.smtpUseTLS = defaults.object(forKey: "smtpUseTLS") == nil ? true : defaults.bool(forKey: "smtpUseTLS")
     }
 }

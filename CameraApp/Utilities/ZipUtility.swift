@@ -2,44 +2,47 @@
 //  ZipUtility.swift
 //  CameraApp
 //
-//  照片打包工具：按备注分组整理照片文件
+//  ZIP 压缩工具：使用 ZIPFoundation 创建真正的 ZIP 文件
 //  路径: CameraApp/Utilities/ZipUtility.swift
 //
 
 import Foundation
+import ZIPFoundation
 
-/// 照片打包工具类（iOS 无内置 ZIP API，直接返回文件数据）
+/// ZIP 压缩工具类
 struct ZipUtility {
 
-    /// 按备注分组获取照片附件数据
+    /// 按备注分组创建 ZIP 压缩包
     /// - Parameter groups: [备注名: [照片记录]]
-    /// - Returns: 邮件附件数组
-    static func prepareAttachments(from groups: [String: [PhotoRecord]]) -> [(data: Data, mimeType: String, fileName: String)] {
-        var attachments: [(data: Data, mimeType: String, fileName: String)] = []
+    /// - Returns: [(备注名, ZIP文件URL)]
+    static func createZips(from groups: [String: [PhotoRecord]]) -> [(String, URL)] {
+        var results: [(String, URL)] = []
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         let dateStr = formatter.string(from: Date())
 
         for (note, records) in groups {
-            for (index, record) in records.enumerated() {
-                guard let data = try? Data(contentsOf: URL(fileURLWithPath: record.filePath)) else {
-                    continue
-                }
+            let zipName = "\(sanitize(note))_\(dateStr).zip"
+            let zipURL = FileManager.default.temporaryDirectory.appendingPathComponent(zipName)
 
-                let ext = record.isVideo ? "mp4" : "jpg"
-                let mimeType = record.isVideo ? "video/mp4" : "image/jpeg"
-                // 文件名: 备注_日期_序号.jpg
-                let fileName = "\(sanitize(note))_\(dateStr)_\(index + 1).\(ext)"
+            // 删除已存在的同名文件
+            try? FileManager.default.removeItem(at: zipURL)
 
-                attachments.append((data: data, mimeType: mimeType, fileName: fileName))
+            do {
+                // 创建 ZIP 归档
+                try FileManager.default.zipItems(records: records, to: zipURL)
+                results.append((note, zipURL))
+                print("[ZipUtility] 已创建 ZIP: \(zipName), 包含 \(records.count) 个文件")
+            } catch {
+                print("[ZipUtility] 创建 ZIP 失败: \(error.localizedDescription)")
             }
         }
 
-        return attachments
+        return results
     }
 
-    /// 清理临时文件
+    /// 清理临时 ZIP 文件
     static func cleanup(zipURLs: [URL]) {
         for url in zipURLs {
             try? FileManager.default.removeItem(at: url)
@@ -47,9 +50,40 @@ struct ZipUtility {
     }
 
     /// 清理文件名中的非法字符
-    private static func sanitize(_ name: String) -> String {
+    static func sanitize(_ name: String) -> String {
         let invalidChars = CharacterSet(charactersIn: "/\\:*?\"<>|")
         let cleaned = name.components(separatedBy: invalidChars).joined(separator: "_")
         return cleaned.isEmpty ? "photo" : cleaned
+    }
+}
+
+// MARK: - FileManager 扩展
+
+extension FileManager {
+    /// 将多条照片记录压缩为 ZIP
+    func zipItems(records: [PhotoRecord], to destinationURL: URL) throws {
+        // 创建临时目录
+        let stagingDir = temporaryDirectory.appendingPathComponent("zip_staging_\(UUID().uuidString)", isDirectory: true)
+        try createDirectory(at: stagingDir, withIntermediateDirectories: true)
+
+        defer {
+            try? removeItem(at: stagingDir)
+        }
+
+        // 复制文件到临时目录（避免文件名冲突）
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HHmmss"
+
+        for (index, record) in records.enumerated() {
+            let srcURL = URL(fileURLWithPath: record.filePath)
+            let ext = srcURL.pathExtension
+            let timeStr = formatter.string(from: record.date)
+            let fileName = "\(timeStr)_\(index + 1).\(ext)"
+            let dstURL = stagingDir.appendingPathComponent(fileName)
+            try? copyItem(at: srcURL, to: dstURL)
+        }
+
+        // 使用 ZIPFoundation 创建 ZIP
+        try zipItem(at: stagingDir, to: destinationURL)
     }
 }
