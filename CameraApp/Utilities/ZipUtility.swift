@@ -2,95 +2,44 @@
 //  ZipUtility.swift
 //  CameraApp
 //
-//  ZIP 压缩工具：将照片文件压缩为 ZIP 包
+//  照片打包工具：按备注分组整理照片文件
 //  路径: CameraApp/Utilities/ZipUtility.swift
 //
 
 import Foundation
 
-/// ZIP 压缩工具类
+/// 照片打包工具类（iOS 无内置 ZIP API，直接返回文件数据）
 struct ZipUtility {
 
-    /// 将多个文件压缩为 ZIP
-    /// - Parameters:
-    ///   - filePaths: 文件路径数组
-    ///   - zipName: ZIP 文件名（不含扩展名）
-    /// - Returns: ZIP 文件 URL
-    static func createZip(from filePaths: [String], zipName: String) -> URL? {
-        let tempDir = FileManager.default.temporaryDirectory
-        let zipURL = tempDir.appendingPathComponent("\(sanitize(zipName)).zip")
-
-        // 删除已存在的同名 ZIP
-        try? FileManager.default.removeItem(at: zipURL)
-
-        // 创建临时目录，将文件复制进去
-        let stagingDir = tempDir.appendingPathComponent("zip_staging_\(UUID().uuidString)", isDirectory: true)
-        try? FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-
-        defer {
-            try? FileManager.default.removeItem(at: stagingDir)
-        }
-
-        // 复制文件到临时目录
-        for path in filePaths {
-            let srcURL = URL(fileURLWithPath: path)
-            let dstURL = stagingDir.appendingPathComponent(srcURL.lastPathComponent)
-            try? FileManager.default.copyItem(at: srcURL, to: dstURL)
-        }
-
-        // 使用 NSFileCoordinator 创建 ZIP（forUploading 选项）
-        let coordinator = NSFileCoordinator()
-        var coordinatorError: NSError?
-        var zipCreated = false
-
-        coordinator.coordinate(readingItemAt: stagingDir, options: [], error: &coordinatorError) { url in
-            // 使用 FileManager 的 ZIP 归档功能
-            let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
-            guard let files = contents, !files.isEmpty else { return }
-
-            // 创建 ZIP 归档
-            let archiver = try? FileManager.default.zipItem(at: url, to: zipURL)
-            zipCreated = archiver != nil
-        }
-
-        // 如果 NSFileCoordinator 方式失败，使用 fallback：直接复制目录
-        if !zipCreated {
-            do {
-                try FileManager.default.zipItem(at: stagingDir, to: zipURL)
-                zipCreated = true
-            } catch {
-                print("[ZipUtility] ZIP创建失败: \(error.localizedDescription)")
-                return nil
-            }
-        }
-
-        return zipCreated ? zipURL : nil
-    }
-
-    /// 批量创建 ZIP（按备注分组）
+    /// 按备注分组获取照片附件数据
     /// - Parameter groups: [备注名: [照片记录]]
-    /// - Returns: [(备注名, ZIP URL)]
-    static func createZips(from groups: [String: [PhotoRecord]]) -> [(String, URL)] {
-        var results: [(String, URL)] = []
+    /// - Returns: 邮件附件数组
+    static func prepareAttachments(from groups: [String: [PhotoRecord]]) -> [(data: Data, mimeType: String, fileName: String)] {
+        var attachments: [(data: Data, mimeType: String, fileName: String)] = []
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = formatter.string(from: Date())
 
         for (note, records) in groups {
-            let filePaths = records.map { $0.filePath }
+            for (index, record) in records.enumerated() {
+                guard let data = try? Data(contentsOf: URL(fileURLWithPath: record.filePath)) else {
+                    continue
+                }
 
-            // 如果只有一个备注分组，直接用日期+备注名
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            let dateStr = formatter.string(from: Date())
-            let zipName = "\(note)_\(dateStr)"
+                let ext = record.isVideo ? "mp4" : "jpg"
+                let mimeType = record.isVideo ? "video/mp4" : "image/jpeg"
+                // 文件名: 备注_日期_序号.jpg
+                let fileName = "\(sanitize(note))_\(dateStr)_\(index + 1).\(ext)"
 
-            if let zipURL = createZip(from: filePaths, zipName: zipName) {
-                results.append((note, zipURL))
+                attachments.append((data: data, mimeType: mimeType, fileName: fileName))
             }
         }
 
-        return results
+        return attachments
     }
 
-    /// 清理临时 ZIP 文件
+    /// 清理临时文件
     static func cleanup(zipURLs: [URL]) {
         for url in zipURLs {
             try? FileManager.default.removeItem(at: url)
@@ -100,6 +49,7 @@ struct ZipUtility {
     /// 清理文件名中的非法字符
     private static func sanitize(_ name: String) -> String {
         let invalidChars = CharacterSet(charactersIn: "/\\:*?\"<>|")
-        return name.components(separatedBy: invalidChars).joined(separator: "_")
+        let cleaned = name.components(separatedBy: invalidChars).joined(separator: "_")
+        return cleaned.isEmpty ? "photo" : cleaned
     }
 }

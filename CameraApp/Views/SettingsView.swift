@@ -241,8 +241,6 @@ struct SettingsView: View {
                     case .failure(let error):
                         sendResult = "发送失败: \(error.localizedDescription)"
                     }
-                    // 清理临时文件
-                    ZipUtility.cleanup(zipURLs: mailAttachments.map { _ in URL(fileURLWithPath: "") })
                 }
             }
         }
@@ -266,19 +264,7 @@ struct SettingsView: View {
 
         DispatchQueue.global(qos: .userInitiated).async {
             let groups = PhotoStore.shared.getTodayGroupedByNote()
-            let zips = ZipUtility.createZips(from: groups)
-
-            var attachments: [(data: Data, mimeType: String, fileName: String)] = []
-
-            for (note, zipURL) in zips {
-                if let data = try? Data(contentsOf: zipURL) {
-                    attachments.append((
-                        data: data,
-                        mimeType: "application/zip",
-                        fileName: zipURL.lastPathComponent
-                    ))
-                }
-            }
+            let attachments = ZipUtility.prepareAttachments(from: groups)
 
             DispatchQueue.main.async {
                 isSending = false
@@ -286,7 +272,7 @@ struct SettingsView: View {
                     sendResult = "今天没有可发送的照片"
                 } else {
                     mailAttachments = attachments
-                    sendResult = "已准备 \(attachments.count) 个压缩包，正在打开邮件..."
+                    sendResult = "已准备 \(attachments.count) 张照片，正在打开邮件..."
                     showMailView = true
                 }
             }
