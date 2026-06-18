@@ -8,6 +8,7 @@
 
 import Foundation
 import Network
+import UIKit
 
 // MARK: - 上传任务
 

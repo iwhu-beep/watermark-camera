@@ -46,7 +46,7 @@ struct HistoryView: View {
             .navigationTitle("历史记录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItemGroup(placement: .navigationBarLeading) {
                     Button {
                         exportCSV()
                     } label: {
@@ -54,7 +54,7 @@ struct HistoryView: View {
                     }
                     .disabled(allRecords.isEmpty)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
             }
@@ -62,7 +62,7 @@ struct HistoryView: View {
         .onAppear { loadData() }
         .sheet(isPresented: $showExportSheet) {
             if let url = csvURL {
-                ShareSheet(activityItems: [url])
+                ShareSheet(items: [url])
             }
         }
     }
