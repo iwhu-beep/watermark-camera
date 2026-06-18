@@ -91,7 +91,7 @@ struct ZipUtility {
 // MARK: - FileManager 扩展
 
 extension FileManager {
-    /// 将多条照片记录压缩为 ZIP
+    /// 将多条照片/视频记录压缩为 ZIP
     func zipItems(records: [PhotoRecord], to destinationURL: URL) throws {
         // 创建临时目录
         let stagingDir = temporaryDirectory.appendingPathComponent("zip_staging_\(UUID().uuidString)", isDirectory: true)
@@ -109,9 +109,21 @@ extension FileManager {
             let srcURL = URL(fileURLWithPath: record.filePath)
             let ext = srcURL.pathExtension
             let timeStr = formatter.string(from: record.date)
-            let fileName = "\(timeStr)_\(index + 1).\(ext)"
+            let typeTag = record.isVideo ? "V" : "P"
+            let fileName = "\(timeStr)_\(typeTag)\(index + 1).\(ext)"
             let dstURL = stagingDir.appendingPathComponent(fileName)
-            try? copyItem(at: srcURL, to: dstURL)
+
+            // 检查源文件是否存在
+            if fileExists(atPath: record.filePath) {
+                do {
+                    try copyItem(at: srcURL, to: dstURL)
+                    print("[ZipUtility] 已复制: \(fileName) (\(record.isVideo ? "视频" : "图片"))")
+                } catch {
+                    print("[ZipUtility] 复制失败: \(fileName), 错误: \(error.localizedDescription)")
+                }
+            } else {
+                print("[ZipUtility] 源文件不存在: \(record.filePath)")
+            }
         }
 
         // 使用 ZIPFoundation 创建 ZIP
