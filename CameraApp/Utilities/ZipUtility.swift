@@ -91,7 +91,7 @@ struct ZipUtility {
 // MARK: - FileManager 扩展
 
 extension FileManager {
-    /// 将多条照片/视频记录压缩为 ZIP
+    /// 将多条照片/视频记录压缩为 ZIP（保留原始文件名）
     func zipItems(records: [PhotoRecord], to destinationURL: URL) throws {
         // 创建临时目录
         let stagingDir = temporaryDirectory.appendingPathComponent("zip_staging_\(UUID().uuidString)", isDirectory: true)
@@ -101,16 +101,26 @@ extension FileManager {
             try? removeItem(at: stagingDir)
         }
 
-        // 复制文件到临时目录（避免文件名冲突）
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HHmmss"
+        // 复制文件到临时目录，使用原始文件名
+        // 用 Set 跟踪已用文件名，避免同名冲突
+        var usedNames: Set<String> = []
 
-        for (index, record) in records.enumerated() {
+        for record in records {
             let srcURL = URL(fileURLWithPath: record.filePath)
-            let ext = srcURL.pathExtension
-            let timeStr = formatter.string(from: record.date)
-            let typeTag = record.isVideo ? "V" : "P"
-            let fileName = "\(timeStr)_\(typeTag)\(index + 1).\(ext)"
+            var fileName = record.fileName
+
+            // 避免同名文件覆盖
+            if usedNames.contains(fileName) {
+                let ext = (fileName as NSString).pathExtension
+                let base = (fileName as NSString).deletingPathExtension
+                var counter = 2
+                while usedNames.contains("\(base)_\(counter).\(ext)") {
+                    counter += 1
+                }
+                fileName = "\(base)_\(counter).\(ext)"
+            }
+            usedNames.insert(fileName)
+
             let dstURL = stagingDir.appendingPathComponent(fileName)
 
             // 检查源文件是否存在
