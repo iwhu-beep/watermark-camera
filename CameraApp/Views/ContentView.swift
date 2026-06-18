@@ -40,6 +40,8 @@ struct ContentView: View {
     @State private var currentLongitude: String = "---"
     @State private var currentLatitude: String = "---"
     @State private var currentAddress: String = "定位中..."
+    @State private var rawLongitude: Double = 0
+    @State private var rawLatitude: Double = 0
 
     // MARK: - 视图主体
 
@@ -369,7 +371,7 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     Text("经度：")
                         .foregroundColor(.white.opacity(0.8))
-                    Text(settings.useCustomCoord ? String(format: "%.6f", settings.customLongitude) : currentLongitude)
+                    Text(formatCoordString(isLongitude: true))
                         .foregroundColor(settings.useCustomCoord ? .green : .white)
                         .lineLimit(1)
                 }
@@ -379,7 +381,7 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     Text("纬度：")
                         .foregroundColor(.white.opacity(0.8))
-                    Text(settings.useCustomCoord ? String(format: "%.6f", settings.customLatitude) : currentLatitude)
+                    Text(formatCoordString(isLongitude: false))
                         .foregroundColor(settings.useCustomCoord ? .green : .white)
                         .lineLimit(1)
                 }
@@ -786,13 +788,25 @@ struct ContentView: View {
 
     // MARK: - 构建水印文本
 
+    /// 根据坐标格式设置格式化坐标字符串
+    private func formatCoordString(isLongitude: Bool) -> String {
+        let value = isLongitude
+            ? (settings.useCustomCoord ? settings.customLongitude : rawLongitude)
+            : (settings.useCustomCoord ? settings.customLatitude : rawLatitude)
+
+        switch settings.coordinateFormat {
+        case .decimal:
+            return String(format: "%.6f", value)
+        case .dms:
+            return LocationManager.decimalToDMS(value, isLongitude: isLongitude)
+        }
+    }
+
     /// 构建水印行数组（与界面信息叠加层一致）
     private func buildWatermarkLines() -> [String] {
         var lines: [String] = []
 
         // 使用自定义经纬度或GPS定位
-        let displayLon = settings.useCustomCoord ? String(format: "%.6f", settings.customLongitude) : currentLongitude
-        let displayLat = settings.useCustomCoord ? String(format: "%.6f", settings.customLatitude) : currentLatitude
         let displayAddr: String
         if settings.useCustomCoord && !settings.customAddress.isEmpty {
             displayAddr = settings.customAddress
@@ -800,8 +814,8 @@ struct ContentView: View {
             displayAddr = currentAddress
         }
 
-        lines.append("经度：\(displayLon)")
-        lines.append("纬度：\(displayLat)")
+        lines.append("经度：\(formatCoordString(isLongitude: true))")
+        lines.append("纬度：\(formatCoordString(isLongitude: false))")
         lines.append("坐标：WGS84 坐标系")
         lines.append("地址：\(displayAddr)")
         let f = DateFormatter()
@@ -950,6 +964,8 @@ struct ContentView: View {
         case .success(let lon, let lat, let address):
             currentLongitude = String(format: "%.6f", lon)
             currentLatitude = String(format: "%.6f", lat)
+            rawLongitude = lon
+            rawLatitude = lat
             currentAddress = address
             DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
                 LocationManager.shared.requestLocation { result in

@@ -247,8 +247,8 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
             return "经度：\(lonStr) 纬度：\(latStr)"
 
         case .dms:
-            let lonDMS = decimalToDMS(lon, isLongitude: true)
-            let latDMS = decimalToDMS(lat, isLongitude: false)
+            let lonDMS = Self.decimalToDMS(lon, isLongitude: true)
+            let latDMS = Self.decimalToDMS(lat, isLongitude: false)
             return "经度：\(lonDMS) 纬度：\(latDMS)"
         }
     }
@@ -486,8 +486,8 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
     // MARK: - 度分秒转换
 
-    /// 十进制度 → 度分秒
-    private func decimalToDMS(_ decimal: Double, isLongitude: Bool) -> String {
+    /// 十进制度 → 度分秒（静态方法，全局可用）
+    static func decimalToDMS(_ decimal: Double, isLongitude: Bool) -> String {
         let absolute = abs(decimal)
         let degrees = Int(absolute)
         let minutes = Int((absolute - Double(degrees)) * 60)
