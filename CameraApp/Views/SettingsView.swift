@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
 
@@ -19,6 +20,10 @@ struct SettingsView: View {
     @State private var sendResult: String = ""
     @State private var isSending: Bool = false
     @State private var showSMTPConfig: Bool = false
+    @State private var isSharing: Bool = false
+    @State private var shareResult: String = ""
+    @State private var showShareSheet: Bool = false
+    @State private var shareItems: [Any] = []
 
     var body: some View {
         NavigationView {
@@ -152,6 +157,42 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
 
+                // ========== 分享照片 ==========
+                Section {
+                    HStack {
+                        Text("今日照片")
+                        Spacer()
+                        Text("\(PhotoStore.shared.todayPhotoCount) 张")
+                            .foregroundColor(.secondary)
+                    }
+
+                    Button(action: shareTodayPhotos) {
+                        HStack {
+                            if isSharing {
+                                ProgressView()
+                                    .progressViewStyle(.circular)
+                            } else {
+                                Image(systemName: "square.and.arrow.up")
+                            }
+                            Text("压缩并分享今日照片")
+                        }
+                        .foregroundColor(.blue)
+                    }
+                    .disabled(isSharing || PhotoStore.shared.todayPhotoCount == 0)
+
+                    if !shareResult.isEmpty {
+                        Text(shareResult)
+                            .font(.caption)
+                            .foregroundColor(shareResult.contains("成功") || shareResult.contains("已准备") ? .green : .red)
+                    }
+                } header: {
+                    Text("分享")
+                } footer: {
+                    Text("压缩为 ZIP 后可通过微信、QQ、AirDrop 等方式分享")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
                 // ========== 坐标格式 ==========
                 Section {
                     Picker("坐标格式", selection: $settings.coordinateFormat) {
@@ -241,6 +282,9 @@ struct SettingsView: View {
             .sheet(isPresented: $showSMTPConfig) {
                 SMTPConfigView().environmentObject(settings)
             }
+            .sheet(isPresented: $showShareSheet) {
+                ShareSheet(items: shareItems)
+            }
         }
     }
 
@@ -304,6 +348,31 @@ struct SettingsView: View {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         return f.string(from: date)
+    }
+
+    // MARK: - 分享今日照片
+
+    private func shareTodayPhotos() {
+        isSharing = true
+        shareResult = "正在压缩照片..."
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let groups = PhotoStore.shared.getTodayGroupedByNote()
+            let zips = ZipUtility.createZips(from: groups)
+
+            DispatchQueue.main.async {
+                isSharing = false
+                if zips.isEmpty {
+                    shareResult = "今天没有可分享的照片"
+                    return
+                }
+
+                let zipURLs = zips.map { $0.1 }
+                shareResult = "已准备 \(zips.count) 个压缩包，请选择分享方式"
+                shareItems = zipURLs
+                showShareSheet = true
+            }
+        }
     }
 
     // MARK: - 位置标签

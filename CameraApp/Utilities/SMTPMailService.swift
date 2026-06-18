@@ -36,33 +36,30 @@ final class SMTPMailService {
         attachments: [URL],
         completion: @escaping (Bool, String) -> Void
     ) {
-        // 配置 SMTP 服务器
-        let smtp: SMTP
-        if useTLS {
-            smtp = SMTP(
-                hostname: host,
-                email: user,
-                password: password,
-                port: Int32(port),
-                tlsMode: .requireSTARTTLS,
-                tlsConfiguration: nil,
-                authMethods: [],
-                domainName: "打卡相机",
-                timeout: 30
-            )
+        // 根据端口选择 TLS 模式
+        // 465 → 隐式 TLS (SMTPS)
+        // 587/25 → STARTTLS 升级
+        let tlsMode: SMTP.TLSMode
+        if !useTLS {
+            tlsMode = .ignoreTLS
+        } else if port == 465 {
+            tlsMode = .requireTLS       // 隐式 TLS
         } else {
-            smtp = SMTP(
-                hostname: host,
-                email: user,
-                password: password,
-                port: Int32(port),
-                tlsMode: .ignoreTLS,
-                tlsConfiguration: nil,
-                authMethods: [],
-                domainName: "打卡相机",
-                timeout: 30
-            )
+            tlsMode = .requireSTARTTLS  // STARTTLS 升级
         }
+
+        // 配置 SMTP 服务器
+        let smtp = SMTP(
+            hostname: host,
+            email: user,
+            password: password,
+            port: Int32(port),
+            tlsMode: tlsMode,
+            tlsConfiguration: nil,
+            authMethods: [],
+            domainName: "打卡相机",
+            timeout: 30
+        )
 
         // 构建附件
         var mailAttachments: [Attachment] = []
