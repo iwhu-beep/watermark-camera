@@ -321,7 +321,8 @@ struct SettingsView: View {
                 let formatter = DateFormatter()
                 formatter.dateFormat = "yyyy-MM-dd"
                 let dateStr = formatter.string(from: Date())
-                let subject = "打卡相机照片 - \(dateStr)"
+                // 邮件主题使用压缩包文件名命名
+                let subject = zipNames.joined(separator: "、") + "_" + dateStr
                 let body = "附件为当天拍摄的照片，按备注名分组压缩。\n\n压缩包：\n\(zipNames.joined(separator: "\n"))"
 
                 SMTPMailService.sendMail(
