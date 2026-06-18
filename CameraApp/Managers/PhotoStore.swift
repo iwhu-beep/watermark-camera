@@ -178,7 +178,87 @@ final class PhotoStore: ObservableObject {
         refreshTodayCount()
     }
 
+    /// 计算缓存大小（字节）：包括 Photos 目录 + 临时目录中的 ZIP/VID 文件
+    func cacheSize() -> Int64 {
+        var totalSize: Int64 = 0
+
+        // Photos 目录大小
+        totalSize += directorySize(at: photosDir)
+
+        // 临时目录中的 ZIP 和 VID_*.mp4 文件
+        let tempDir = FileManager.default.temporaryDirectory
+        if let files = try? FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: [.fileSizeKey]) {
+            for file in files {
+                let name = file.lastPathComponent
+                if name.hasSuffix(".zip") || (name.hasPrefix("VID_") && name.hasSuffix(".mp4")) {
+                    if let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                        totalSize += Int64(size)
+                    }
+                }
+                // ZIP 压缩临时目录
+                if name.hasPrefix("zip_staging_") {
+                    totalSize += directorySize(at: file)
+                }
+            }
+        }
+
+        return totalSize
+    }
+
+    /// 格式化缓存大小为可读字符串
+    func formattedCacheSize() -> String {
+        let bytes = cacheSize()
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
+    }
+
+    /// 清理所有缓存：删除所有照片副本、临时 ZIP、临时视频、ZIP staging 目录
+    func clearAllCache() {
+        // 1. 清空 Photos 目录中的文件
+        if let files = try? FileManager.default.contentsOfDirectory(at: photosDir, includingPropertiesForKeys: nil) {
+            for file in files {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+
+        // 2. 清空记录
+        saveRecords([])
+
+        // 3. 清理临时目录中的 ZIP、VID、staging 目录
+        let tempDir = FileManager.default.temporaryDirectory
+        if let files = try? FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil) {
+            for file in files {
+                let name = file.lastPathComponent
+                if name.hasSuffix(".zip") || name.hasPrefix("VID_") || name.hasPrefix("zip_staging_") {
+                    try? FileManager.default.removeItem(at: file)
+                }
+            }
+        }
+
+        refreshTodayCount()
+        print("[PhotoStore] 缓存已清理")
+    }
+
     // MARK: - 私有方法
+
+    /// 计算目录总大小
+    private func directorySize(at url: URL) -> Int64 {
+        var totalSize: Int64 = 0
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey]) else {
+            return 0
+        }
+        for case let fileURL as URL in enumerator {
+            guard let values = try? fileURL.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey]),
+                  let isDir = values.isDirectory else { continue }
+            if !isDir, let size = values.fileSize {
+                totalSize += Int64(size)
+            }
+        }
+        return totalSize
+    }
 
     private func addRecord(_ record: PhotoRecord) {
         var records = getAllRecords()

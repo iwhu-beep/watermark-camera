@@ -24,6 +24,9 @@ struct SettingsView: View {
     @State private var shareResult: String = ""
     @State private var showShareSheet: Bool = false
     @State private var shareItems: [Any] = []
+    @State private var cacheSizeText: String = ""
+    @State private var showClearConfirm: Bool = false
+    @State private var clearResult: String = ""
 
     var body: some View {
         NavigationView {
@@ -263,6 +266,36 @@ struct SettingsView: View {
                 } header: {
                     Text("水印设置")
                 }
+
+                // ========== 缓存管理 ==========
+                Section {
+                    HStack {
+                        Text("缓存大小")
+                        Spacer()
+                        Text(cacheSizeText.isEmpty ? "计算中..." : cacheSizeText)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Button(action: { showClearConfirm = true }) {
+                        HStack {
+                            Image(systemName: "trash")
+                            Text("清理缓存")
+                        }
+                        .foregroundColor(.red)
+                    }
+
+                    if !clearResult.isEmpty {
+                        Text(clearResult)
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
+                } header: {
+                    Text("缓存管理")
+                } footer: {
+                    Text("清理本地照片副本、临时压缩文件等（不影响相册中已保存的照片）")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
             .navigationTitle("设置")
             .navigationBarTitleDisplayMode(.inline)
@@ -284,6 +317,19 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showShareSheet) {
                 ShareSheet(items: shareItems)
+            }
+            .onAppear {
+                cacheSizeText = PhotoStore.shared.formattedCacheSize()
+            }
+            .alert("确认清理缓存？", isPresented: $showClearConfirm) {
+                Button("取消", role: .cancel) {}
+                Button("清理", role: .destructive) {
+                    PhotoStore.shared.clearAllCache()
+                    cacheSizeText = PhotoStore.shared.formattedCacheSize()
+                    clearResult = "缓存已清理"
+                }
+            } message: {
+                Text("将删除本地照片副本和临时压缩文件，不影响相册中已保存的照片。")
             }
         }
     }
