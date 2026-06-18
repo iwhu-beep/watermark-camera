@@ -856,13 +856,16 @@ struct ContentView: View {
             verticalPosition: settings.watermarkVerticalPosition
         )
 
-        savePhotoToLibrary(watermarkedImage)
-
-        // 保存到本地副本（用于邮箱发送）
+        // 生成文件名：备注内容_日期时间.jpg
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss"
         let prefix = settings.noteText.isEmpty ? "IMG" : settings.noteText
         let fileName = "\(prefix)_\(formatter.string(from: Date())).jpg"
+
+        // 保存到相册（使用自定义文件名）
+        savePhotoToLibrary(watermarkedImage, fileName: fileName)
+
+        // 保存到本地副本（用于邮箱发送/分享）
         PhotoStore.shared.savePhoto(image: watermarkedImage, note: settings.noteText, fileName: fileName)
 
         if settings.autoUpload {
@@ -877,10 +880,28 @@ struct ContentView: View {
             print("[ContentView] 录像失败")
             return
         }
-        print("[ContentView] 视频已保存: \(url.lastPathComponent)")
-        saveVideoToLibrary(url)
 
-        // 保存到本地副本（用于邮箱发送）
+        // 生成自定义文件名
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        let prefix = settings.noteText.isEmpty ? "VID" : settings.noteText
+        let fileName = "\(prefix)_\(formatter.string(from: Date())).mp4"
+
+        // 复制到新文件名的临时文件，用于保存到相册
+        let renamedURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        try? FileManager.default.removeItem(at: renamedURL)
+        do {
+            try FileManager.default.copyItem(at: url, to: renamedURL)
+            saveVideoToLibrary(renamedURL)
+            try? FileManager.default.removeItem(at: renamedURL)
+        } catch {
+            // 复制失败则用原始文件保存
+            saveVideoToLibrary(url)
+        }
+
+        print("[ContentView] 视频已保存: \(fileName)")
+
+        // 保存到本地副本（用于邮箱发送/分享）
         PhotoStore.shared.saveVideo(from: url, note: settings.noteText)
 
         if settings.autoUpload {
@@ -890,12 +911,28 @@ struct ContentView: View {
 
     // MARK: - 保存相册
 
-    private func savePhotoToLibrary(_ image: UIImage) {
+    /// 保存照片到相册，使用自定义文件名
+    private func savePhotoToLibrary(_ image: UIImage, fileName: String) {
         guard hasPhotoLibraryPermission() else { return }
+
+        // 写入临时文件（保留自定义文件名）
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        guard let data = image.jpegData(compressionQuality: 0.95) else { return }
+
+        do {
+            try data.write(to: tempURL)
+        } catch {
+            print("[ContentView] 写入临时文件失败: \(error.localizedDescription)")
+            return
+        }
+
         PHPhotoLibrary.shared().performChanges({
-            PHAssetChangeRequest.creationRequestForAsset(from: image)
+            let request = PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL: tempURL)
+            _ = request
         }) { success, error in
-            print("[ContentView] 照片保存: \(success ? "成功" : "失败")")
+            // 清理临时文件
+            try? FileManager.default.removeItem(at: tempURL)
+            print("[ContentView] 照片保存: \(success ? "成功" : "失败") (\(fileName))")
         }
     }
 
