@@ -12,9 +12,10 @@ import ZIPFoundation
 /// ZIP 压缩工具类
 struct ZipUtility {
 
-    /// 按备注分组创建 ZIP 压缩包
+    /// 按备注前缀分组创建 ZIP 压缩包
+    /// 备注前 2 个字相同的归入同一个压缩包
     /// - Parameter groups: [备注名: [照片记录]]
-    /// - Returns: [(备注名, ZIP文件URL)]
+    /// - Returns: [(分组名, ZIP文件URL)]
     static func createZips(from groups: [String: [PhotoRecord]]) -> [(String, URL)] {
         var results: [(String, URL)] = []
 
@@ -22,17 +23,23 @@ struct ZipUtility {
         formatter.dateFormat = "yyyy-MM-dd"
         let dateStr = formatter.string(from: Date())
 
+        // 按备注前 2 个字合并分组
+        var mergedGroups: [String: [PhotoRecord]] = [:]
         for (note, records) in groups {
-            let zipName = "\(sanitize(note))_\(dateStr).zip"
+            let prefix = String(note.prefix(2))
+            mergedGroups[prefix, default: []].append(contentsOf: records)
+        }
+
+        for (prefix, records) in mergedGroups {
+            let zipName = "\(sanitize(prefix))_\(dateStr).zip"
             let zipURL = FileManager.default.temporaryDirectory.appendingPathComponent(zipName)
 
             // 删除已存在的同名文件
             try? FileManager.default.removeItem(at: zipURL)
 
             do {
-                // 创建 ZIP 归档
                 try FileManager.default.zipItems(records: records, to: zipURL)
-                results.append((note, zipURL))
+                results.append((prefix, zipURL))
                 print("[ZipUtility] 已创建 ZIP: \(zipName), 包含 \(records.count) 个文件")
             } catch {
                 print("[ZipUtility] 创建 ZIP 失败: \(error.localizedDescription)")
