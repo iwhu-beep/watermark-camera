@@ -49,6 +49,30 @@ struct ZipUtility {
         return results
     }
 
+    /// 将所有记录合并为单个 ZIP 压缩包
+    /// - Parameter records: 照片记录数组
+    /// - Returns: ZIP 文件 URL
+    static func createSingleZip(from records: [PhotoRecord]) -> URL? {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = formatter.string(from: Date())
+
+        let zipName = "打卡相机_\(dateStr).zip"
+        let zipURL = FileManager.default.temporaryDirectory.appendingPathComponent(zipName)
+
+        // 删除已存在的同名文件
+        try? FileManager.default.removeItem(at: zipURL)
+
+        do {
+            try FileManager.default.zipItems(records: records, to: zipURL)
+            print("[ZipUtility] 已创建单个 ZIP: \(zipName), 包含 \(records.count) 个文件")
+            return zipURL
+        } catch {
+            print("[ZipUtility] 创建 ZIP 失败: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     /// 清理临时 ZIP 文件
     static func cleanup(zipURLs: [URL]) {
         for url in zipURLs {

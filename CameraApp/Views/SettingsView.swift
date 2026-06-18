@@ -358,20 +358,23 @@ struct SettingsView: View {
         shareResult = "正在压缩照片..."
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let groups = PhotoStore.shared.getTodayGroupedByNote()
-            let zips = ZipUtility.createZips(from: groups)
+            // 获取今天所有照片记录，合并为单个 ZIP
+            let allRecords = PhotoStore.shared.getTodayRecords()
 
             DispatchQueue.main.async {
                 isSharing = false
-                if zips.isEmpty {
+                if allRecords.isEmpty {
                     shareResult = "今天没有可分享的照片"
                     return
                 }
 
-                let zipURLs = zips.map { $0.1 }
-                shareResult = "已准备 \(zips.count) 个压缩包，请选择分享方式"
-                shareItems = zipURLs
-                showShareSheet = true
+                if let zipURL = ZipUtility.createSingleZip(from: allRecords) {
+                    shareResult = "已准备 1 个压缩包（\(allRecords.count) 张照片），请选择分享方式"
+                    shareItems = [zipURL]
+                    showShareSheet = true
+                } else {
+                    shareResult = "压缩失败，请重试"
+                }
             }
         }
     }
