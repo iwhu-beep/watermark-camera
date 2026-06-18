@@ -958,35 +958,101 @@ struct ContentView: View {
     // MARK: - 上传到百度网盘
 
     private func uploadImage(_ image: UIImage) {
-        BaiduUploader.shared.uploadImage(
-            image,
-            fileNamePrefix: settings.noteText.isEmpty ? nil : settings.noteText,
-            onProgress: { progress in print("[Baidu] 上传: \(Int(progress * 100))%") },
-            onSuccess: {
-                uploadResultMessage = "已上传到百度网盘"
-                showUploadResult = true
-            },
-            onFailure: { error in
-                uploadResultMessage = "上传失败: \(error.localizedDescription)"
-                showUploadResult = true
-            }
-        )
+        // 获取日期文件夹
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateFolder = formatter.string(from: Date())
+
+        // 如果有备注，在日期文件夹下再分一层
+        let folder: String
+        if !settings.noteText.isEmpty {
+            let sanitizedNote = ZipUtility.sanitize(settings.noteText)
+            folder = "\(dateFolder)/\(sanitizedNote)"
+        } else {
+            folder = dateFolder
+        }
+
+        // 生成文件名
+        let fileFormatter = DateFormatter()
+        fileFormatter.dateFormat = "yyyyMMdd_HHmmss"
+        let prefix = settings.noteText.isEmpty ? "IMG" : settings.noteText
+        let fileName = "\(prefix)_\(fileFormatter.string(from: Date())).jpg"
+
+        // 检查网络状态
+        if UploadQueueManager.shared.isNetworkAvailable {
+            BaiduUploader.shared.uploadImage(
+                image,
+                fileNamePrefix: settings.noteText.isEmpty ? nil : settings.noteText,
+                remoteFolder: folder,
+                onProgress: { progress in print("[Baidu] 上传: \(Int(progress * 100))%") },
+                onSuccess: {
+                    uploadResultMessage = "已上传到百度网盘"
+                    showUploadResult = true
+                },
+                onFailure: { error in
+                    // 网络失败时加入队列
+                    if case .networkError = error {
+                        UploadQueueManager.shared.enqueueImage(image, fileName: fileName, note: settings.noteText)
+                        uploadResultMessage = "网络不可用，已加入上传队列"
+                    } else {
+                        uploadResultMessage = "上传失败: \(error.localizedDescription)"
+                    }
+                    showUploadResult = true
+                }
+            )
+        } else {
+            // 无网络，加入队列
+            UploadQueueManager.shared.enqueueImage(image, fileName: fileName, note: settings.noteText)
+            uploadResultMessage = "已加入上传队列（无网络）"
+            showUploadResult = true
+        }
     }
 
     private func uploadVideo(_ url: URL) {
-        BaiduUploader.shared.uploadVideo(
-            url,
-            fileNamePrefix: settings.noteText.isEmpty ? nil : settings.noteText,
-            onProgress: { progress in print("[Baidu] 上传: \(Int(progress * 100))%") },
-            onSuccess: {
-                uploadResultMessage = "视频已上传到百度网盘"
-                showUploadResult = true
-            },
-            onFailure: { error in
-                uploadResultMessage = "上传失败: \(error.localizedDescription)"
-                showUploadResult = true
-            }
-        )
+        // 获取日期文件夹
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateFolder = formatter.string(from: Date())
+
+        let folder: String
+        if !settings.noteText.isEmpty {
+            let sanitizedNote = ZipUtility.sanitize(settings.noteText)
+            folder = "\(dateFolder)/\(sanitizedNote)"
+        } else {
+            folder = dateFolder
+        }
+
+        // 生成文件名
+        let fileFormatter = DateFormatter()
+        fileFormatter.dateFormat = "yyyyMMdd_HHmmss"
+        let prefix = settings.noteText.isEmpty ? "VID" : settings.noteText
+        let fileName = "\(prefix)_\(fileFormatter.string(from: Date())).mp4"
+
+        if UploadQueueManager.shared.isNetworkAvailable {
+            BaiduUploader.shared.uploadVideo(
+                url,
+                fileNamePrefix: settings.noteText.isEmpty ? nil : settings.noteText,
+                remoteFolder: folder,
+                onProgress: { progress in print("[Baidu] 上传: \(Int(progress * 100))%") },
+                onSuccess: {
+                    uploadResultMessage = "视频已上传到百度网盘"
+                    showUploadResult = true
+                },
+                onFailure: { error in
+                    if case .networkError = error {
+                        UploadQueueManager.shared.enqueueVideo(from: url, fileName: fileName, note: settings.noteText)
+                        uploadResultMessage = "网络不可用，已加入上传队列"
+                    } else {
+                        uploadResultMessage = "上传失败: \(error.localizedDescription)"
+                    }
+                    showUploadResult = true
+                }
+            )
+        } else {
+            UploadQueueManager.shared.enqueueVideo(from: url, fileName: fileName, note: settings.noteText)
+            uploadResultMessage = "已加入上传队列（无网络）"
+            showUploadResult = true
+        }
     }
 
     // MARK: - 定位更新

@@ -375,6 +375,7 @@ final class BaiduUploader: NSObject {
     func uploadImage(
         _ image: UIImage,
         fileNamePrefix: String? = nil,
+        remoteFolder: String? = nil,
         onProgress: ((Double) -> Void)? = nil,
         onSuccess: @escaping () -> Void,
         onFailure: @escaping (BaiduUploadError) -> Void
@@ -397,9 +398,17 @@ final class BaiduUploader: NSObject {
         }
         let tempURL = tempDir.appendingPathComponent(fileName)
 
+        // 构建远程路径：支持按日期分文件夹
+        let basePath: String
+        if let folder = remoteFolder, !folder.isEmpty {
+            basePath = "/apps/拍照/\(folder)"
+        } else {
+            basePath = "/apps/拍照"
+        }
+        let remotePath = "\(basePath)/\(fileName)"
+
         do {
             try imageData.write(to: tempURL)
-            let remotePath = "/apps/拍照/\(fileName)"
             uploadFile(
                 localURL: tempURL,
                 remotePath: remotePath,
@@ -423,6 +432,7 @@ final class BaiduUploader: NSObject {
     func uploadVideo(
         _ videoURL: URL,
         fileNamePrefix: String? = nil,
+        remoteFolder: String? = nil,
         onProgress: ((Double) -> Void)? = nil,
         onSuccess: @escaping () -> Void,
         onFailure: @escaping (BaiduUploadError) -> Void
@@ -454,7 +464,15 @@ final class BaiduUploader: NSObject {
             uploadURL = videoURL
         }
 
-        let remotePath = "/apps/拍照/\(fileName)"
+        // 构建远程路径：支持按日期分文件夹
+        let basePath: String
+        if let folder = remoteFolder, !folder.isEmpty {
+            basePath = "/apps/拍照/\(folder)"
+        } else {
+            basePath = "/apps/拍照"
+        }
+        let remotePath = "\(basePath)/\(fileName)"
+
         uploadFile(
             localURL: uploadURL,
             remotePath: remotePath,

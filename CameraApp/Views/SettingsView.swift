@@ -27,6 +27,8 @@ struct SettingsView: View {
     @State private var cacheSizeText: String = ""
     @State private var showClearConfirm: Bool = false
     @State private var clearResult: String = ""
+    @State private var showStatistics: Bool = false
+    @State private var showHistory: Bool = false
 
     var body: some View {
         NavigationView {
@@ -45,10 +47,36 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+
+                    Button(action: { showStatistics = true }) {
+                        HStack {
+                            Image(systemName: "chart.bar.fill")
+                                .foregroundColor(.orange)
+                            Text("拍摄统计")
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Button(action: { showHistory = true }) {
+                        HStack {
+                            Image(systemName: "calendar")
+                                .foregroundColor(.green)
+                            Text("历史记录")
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 } header: {
                     Text("工具")
                 } footer: {
-                    Text("选择已有图片，添加自定义水印数据")
+                    Text("水印工具：选择已有图片添加水印\n拍摄统计：查看今日/本周/本月拍摄数据\n历史记录：日历浏览 + 导出 CSV")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -155,9 +183,22 @@ struct SettingsView: View {
                 } header: {
                     Text("上传设置")
                 } footer: {
-                    Text("拍照/录像后自动上传到百度网盘 /apps/拍照/ 目录")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("上传路径: /apps/拍照/日期/备注/文件名")
+                            .font(.caption2)
+                        Text("无网络时自动加入上传队列，恢复网络后自动上传")
+                            .font(.caption2)
+                        if UploadQueueManager.shared.pendingCount > 0 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.up.circle.fill")
+                                    .foregroundColor(.orange)
+                                Text("待上传: \(UploadQueueManager.shared.pendingCount) 个文件")
+                                    .foregroundColor(.orange)
+                            }
+                            .font(.caption2)
+                        }
+                    }
+                    .foregroundColor(.secondary)
                 }
 
                 // ========== 分享照片 ==========
@@ -317,6 +358,12 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showShareSheet) {
                 ShareSheet(items: shareItems)
+            }
+            .sheet(isPresented: $showStatistics) {
+                StatisticsView()
+            }
+            .sheet(isPresented: $showHistory) {
+                HistoryView()
             }
             .onAppear {
                 cacheSizeText = PhotoStore.shared.formattedCacheSize()
