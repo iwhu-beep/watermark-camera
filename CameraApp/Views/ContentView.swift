@@ -861,7 +861,8 @@ struct ContentView: View {
         // 保存到本地副本（用于邮箱发送）
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss"
-        let fileName = "IMG_\(formatter.string(from: Date())).jpg"
+        let prefix = settings.noteText.isEmpty ? "IMG" : settings.noteText
+        let fileName = "\(prefix)_\(formatter.string(from: Date())).jpg"
         PhotoStore.shared.savePhoto(image: watermarkedImage, note: settings.noteText, fileName: fileName)
 
         if settings.autoUpload {

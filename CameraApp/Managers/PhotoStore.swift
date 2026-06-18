@@ -87,7 +87,11 @@ final class PhotoStore: ObservableObject {
     ///   - videoURL: 视频文件 URL
     ///   - note: 备注内容
     func saveVideo(from videoURL: URL, note: String) {
-        let fileName = videoURL.lastPathComponent
+        // 使用备注内容作为文件名前缀
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        let prefix = note.isEmpty ? "VID" : note
+        let fileName = "\(prefix)_\(formatter.string(from: Date())).mp4"
         let destURL = photosDir.appendingPathComponent(fileName)
 
         do {
