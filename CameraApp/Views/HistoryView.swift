@@ -19,6 +19,9 @@ struct HistoryView: View {
     @State private var showExportSheet = false
     @State private var csvURL: URL?
     @State private var currentMonth: Date = Date()
+    @State private var isReuploading = false
+    @State private var reuploadMessage = ""
+    @State private var reuploadProgress = 0
 
     private let calendar = Calendar.current
 
@@ -188,6 +191,45 @@ struct HistoryView: View {
             .padding(.horizontal)
             .padding(.vertical, 8)
 
+            // 重新上传按钮
+            if !showingRecords.isEmpty && BaiduUploader.shared.isLoggedIn() {
+                HStack {
+                    if isReuploading {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                        Text("正在上传 (\(reuploadProgress)/\(showingRecords.count))")
+                            .font(.caption)
+                    } else {
+                        Image(systemName: "icloud.and.arrow.up")
+                        Text("重新上传到百度网盘 (\(showingRecords.count) 个文件)")
+                            .font(.caption)
+                    }
+                    Spacer()
+                }
+                .foregroundColor(.blue)
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(8)
+                .padding(.horizontal)
+                .padding(.bottom, 4)
+                .onTapGesture {
+                    if !isReuploading {
+                        reuploadRecords(showingRecords, date: date)
+                    }
+                }
+                .disabled(isReuploading)
+            }
+
+            // 上传状态提示
+            if !reuploadMessage.isEmpty {
+                Text(reuploadMessage)
+                    .font(.caption)
+                    .foregroundColor(reuploadMessage.contains("成功") ? .green : .secondary)
+                    .padding(.horizontal)
+                    .padding(.bottom, 4)
+            }
+
             if showingRecords.isEmpty {
                 Text("当日无拍摄记录")
                     .font(.subheadline)
@@ -204,7 +246,7 @@ struct HistoryView: View {
                 }
             }
         }
-        .frame(maxHeight: 300)
+        .frame(maxHeight: 350)
         .background(Color(.systemGray6))
     }
 
@@ -220,6 +262,70 @@ struct HistoryView: View {
             grouped[day, default: []].append(record)
         }
         recordsByDate = grouped
+    }
+
+    // MARK: - 重新上传
+
+    private func reuploadRecords(_ records: [PhotoRecord], date: Date) {
+        guard !records.isEmpty else { return }
+
+        isReuploading = true
+        reuploadProgress = 0
+        reuploadMessage = "开始上传..."
+
+        // 构建日期文件夹
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateFolder = formatter.string(from: date)
+
+        uploadNextRecord(records, index: 0, dateFolder: dateFolder)
+    }
+
+    private func uploadNextRecord(_ records: [PhotoRecord], index: Int, dateFolder: String) {
+        guard index < records.count else {
+            // 全部完成
+            isReuploading = false
+            reuploadMessage = "全部上传成功 (\(records.count) 个文件)"
+            return
+        }
+
+        let record = records[index]
+        let localURL = URL(fileURLWithPath: record.filePath)
+
+        guard FileManager.default.fileExists(atPath: record.filePath) else {
+            // 文件不存在，跳过
+            reuploadMessage = "跳过: \(record.fileName) (文件不存在)"
+            uploadNextRecord(records, index: index + 1, dateFolder: dateFolder)
+            return
+        }
+
+        // 构建远程路径
+        let folder: String
+        if !record.note.isEmpty {
+            let sanitizedNote = ZipUtility.sanitize(record.note)
+            folder = "\(dateFolder)/\(sanitizedNote)"
+        } else {
+            folder = dateFolder
+        }
+        let remotePath = "/apps/拍照/\(folder)/\(record.fileName)"
+
+        reuploadMessage = "正在上传: \(record.fileName)"
+        reuploadProgress = index + 1
+
+        BaiduUploader.shared.uploadFile(
+            localURL: localURL,
+            remotePath: remotePath,
+            onSuccess: { [self] in
+                // 延迟 0.5 秒后上传下一个，避免过快触发限流
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    uploadNextRecord(records, index: index + 1, dateFolder: dateFolder)
+                }
+            },
+            onFailure: { [self] error in
+                isReuploading = false
+                reuploadMessage = "上传失败: \(error.localizedDescription)"
+            }
+        )
     }
 
     // MARK: - 日历辅助方法
